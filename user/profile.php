@@ -39,53 +39,76 @@ if (!$user) {
     exit();
 }
 
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+$csrf_token = $_SESSION['csrf_token'];
+
 // Handle Profile Updates Form Submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
-    $new_username = trim($_POST['username'] ?? '');
-    $new_email = trim($_POST['email'] ?? '');
-    $new_password = $_POST['new_password'] ?? '';
-    
-    if ($new_username === '' || $new_email === '' || !filter_var($new_email, FILTER_VALIDATE_EMAIL)) {
-        $msg = "Please enter a valid username and email address.";
+    if (!hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'] ?? '')) {
+        $msg = "Invalid form submission (CSRF).";
         $msg_type = "danger";
     } else {
-        // Check for duplicate username or email belonging to another user
-        $check = $conn->prepare("SELECT id FROM users WHERE (username = ? OR email = ?) AND id != ? LIMIT 1");
-        $check->bind_param("ssi", $new_username, $new_email, $user['id']);
-        $check->execute();
-        $check_res = $check->get_result();
+        $new_username = trim($_POST['username'] ?? '');
+        $new_email = trim($_POST['email'] ?? '');
+        $new_password = $_POST['new_password'] ?? '';
         
-        if ($check_res && $check_res->num_rows > 0) {
-            $msg = "That username or email address is already taken by another account.";
+        if ($new_username === '' || $new_email === '' || !filter_var($new_email, FILTER_VALIDATE_EMAIL)) {
+            $msg = "Please enter a valid username and email address.";
             $msg_type = "danger";
         } else {
-            // Handle Profile Picture Upload
-            $profile_pic_filename = $user['profile_pic'] ?? null;
+            // Check for duplicate username or email belonging to another user
+            $check = $conn->prepare("SELECT id FROM users WHERE (username = ? OR email = ?) AND id != ? LIMIT 1");
+            $check->bind_param("ssi", $new_username, $new_email, $user['id']);
+            $check->execute();
+            $check_res = $check->get_result();
+            
+            if ($check_res && $check_res->num_rows > 0) {
+                $msg = "That username or email address is already taken by another account.";
+                $msg_type = "danger";
+            } else {
+                // Handle Profile Picture Upload
+                $profile_pic_filename = $user['profile_pic'] ?? null;
 
-            if (!empty($_FILES['profile_pic']['name']) && $_FILES['profile_pic']['error'] === UPLOAD_ERR_OK) {
-                $file_tmp = $_FILES['profile_pic']['tmp_name'];
-                $file_name = $_FILES['profile_pic']['name'];
-                $ext = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
-                $allowed = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+                if (!empty($_FILES['profile_pic']['name']) && $_FILES['profile_pic']['error'] === UPLOAD_ERR_OK) {
+                    $file_tmp  = $_FILES['profile_pic']['tmp_name'];
+                    $file_name = $_FILES['profile_pic']['name'];
+                    $file_size = $_FILES['profile_pic']['size'] ?? 0;
+                    $ext = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
+                    $allowed = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+                    $allowed_mimes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+                    $max_size = 5 * 1024 * 1024; // 5MB limit
 
-                if (in_array($ext, $allowed)) {
-                    $upload_dir = __DIR__ . '/../uploads/';
-                    if (!is_dir($upload_dir)) mkdir($upload_dir, 0777, true);
+                    if (in_array($ext, $allowed, true) && $file_size <= $max_size && is_uploaded_file($file_tmp)) {
+                        $check_img = @getimagesize($file_tmp);
+                        if ($check_img !== false && in_array($check_img['mime'], $allowed_mimes, true)) {
+                            $upload_dir = __DIR__ . '/../uploads/';
+                            if (!is_dir($upload_dir)) mkdir($upload_dir, 0755, true);
 
-                    $new_pic_name = 'profile_' . $user['id'] . '_' . uniqid() . '.' . $ext;
-                    $destination = $upload_dir . $new_pic_name;
+                            $new_pic_name = 'profile_' . $user['id'] . '_' . bin2hex(random_bytes(8)) . '.' . $ext;
+                            $destination = $upload_dir . $new_pic_name;
 
-                    if (move_uploaded_file($file_tmp, $destination)) {
-                        $profile_pic_filename = $new_pic_name;
+                            if (move_uploaded_file($file_tmp, $destination)) {
+                                $profile_pic_filename = $new_pic_name;
+                            }
+                        }
                     }
                 }
-            }
 
-            // Update Database Record
-            if (!empty($new_password)) {
-                if (strlen($new_password) < 8) {
-                    $msg = "New password must be at least 8 characters long.";
-                    $msg_type = "danger";
+                // Update Database Record
+                if (!empty($new_password)) {
+                    if (strlen($new_password) < 8) {
+                        $msg = "New password must be at least 8 characters long.";
+                        $msg_type = "danger";
+                    } else {
+                        $hashed_pass = password_hash($new_password, PASSWORD_DEFAULT);
+                        $up_stmt = $conn->prepare("UPDATE users SET username = ?, email = ?, password = ?, profile_pic = ? WHERE id = ?");
+                        $up_stmt->bind_param("ssssi", $new_username, $new_email, $hashed_pass, $profile_pic_filename, $user['id']);
+                        $up_stmt->execute();
+                        $up_stmt->close();
+                        $msg = "Profile details and password updated successfully!";
+                    }
                 } else {
                     $hashed_pass = password_hash($new_password, PASSWORD_DEFAULT);
                     $up_stmt = $conn->prepare("UPDATE users SET username = ?, email = ?, password = ?, profile_pic = ? WHERE id = ?");
@@ -404,6 +427,7 @@ if (!empty($user['profile_pic'])) {
       <?php endif; ?>
 
       <form action="profile.php" method="POST" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrf_token, ENT_QUOTES, 'UTF-8'); ?>">
         <div class="form-grid">
           
           <div class="form-group">

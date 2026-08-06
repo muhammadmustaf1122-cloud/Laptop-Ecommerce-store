@@ -6,10 +6,21 @@ include '../admin/db.php';
 $is_logged_in = (isset($_SESSION['customer_logged_in']) && $_SESSION['customer_logged_in'] === true && ($_SESSION['role'] ?? '') === 'customer');
 $username_session = $is_logged_in ? ($_SESSION['username'] ?? 'User') : null;
 
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
 $id = isset($_GET['id']) ? intval($_GET['id']) : 0;
 
 // HANDLE REVIEW SUBMISSION
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_review'])) {
+    if (
+        empty($_POST['csrf_token']) ||
+        empty($_SESSION['csrf_token']) ||
+        !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])
+    ) {
+        die('Invalid CSRF token.');
+    }
     if ($is_logged_in) {
         $user_id = intval($_SESSION['user_id'] ?? 0);
         $rating = intval($_POST['rating']);
@@ -1206,6 +1217,7 @@ $display_img = !empty($images) ? $images[0] : '';
 
           <?php if ($is_logged_in): ?>
             <form action="../create-checkout-session.php" method="POST" id="buyNowForm">
+              <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
               <input type="hidden" name="laptop_id" value="<?php echo $laptop['id']; ?>">
               <button type="submit" class="btn-buy-now">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
@@ -1245,6 +1257,7 @@ $display_img = !empty($images) ? $images[0] : '';
         <div class="review-form-card">
           <h4>Write a Review</h4>
           <form method="POST" action="laptop_detail.php?id=<?php echo $id; ?>">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
             <div class="rating-select" style="flex-direction: row-reverse; justify-content: flex-end;">
               <input type="radio" id="star5" name="rating" value="5" required /><label for="star5" title="5 stars"><span class="rating-star">★</span></label>
               <input type="radio" id="star4" name="rating" value="4" /><label for="star4" title="4 stars"><span class="rating-star">★</span></label>

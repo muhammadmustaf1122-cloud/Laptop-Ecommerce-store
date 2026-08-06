@@ -1,0 +1,1381 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CyberShield — Malware Analysis Platform</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        'cs': {
+          'bg': '#070B12','bg2': '#0B1220','card': '#0D1526','card2': '#111B2E',
+          'border': '#1A2744','border2': '#1E3050','cyan': '#00F0FF','blue': '#00B4D8',
+          'green': '#00FF88','red': '#FF3B3B','orange': '#FF6B35','yellow': '#FFB800',
+          'text': '#E2E8F0','text2': '#8899AA','text3': '#556677','purple': '#A78BFA'
+        }
+      },
+      fontFamily: {
+        'display': ['Space Grotesk','sans-serif'],
+        'sans': ['IBM Plex Sans','sans-serif'],
+        'mono': ['JetBrains Mono','monospace'],
+      }
+    }
+  }
+}
+</script>
+<style>
+  * { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: #1A2744 transparent; }
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #1A2744; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #1E3050; }
+  body { margin:0; background:#070B12; color:#E2E8F0; font-family:'IBM Plex Sans',sans-serif; overflow:hidden; }
+
+  .bg-grid {
+    background-image: linear-gradient(rgba(0,180,216,0.025) 1px, transparent 1px),
+                      linear-gradient(90deg, rgba(0,180,216,0.025) 1px, transparent 1px);
+    background-size: 48px 48px;
+  }
+  .glass { background:rgba(13,21,38,0.75); backdrop-filter:blur(12px); border:1px solid rgba(26,39,68,0.8); }
+  .glass-bright { background:rgba(17,27,46,0.85); backdrop-filter:blur(16px); border:1px solid rgba(30,48,80,0.7); }
+  .glow-border { box-shadow:0 0 0 1px rgba(0,240,255,0.08), inset 0 0 30px rgba(0,240,255,0.015); }
+  .glow-cyan { box-shadow:0 0 12px rgba(0,240,255,0.15); }
+  .glow-red { box-shadow:0 0 8px rgba(255,59,59,0.2); }
+  .glow-green { box-shadow:0 0 8px rgba(0,255,136,0.15); }
+
+  .sidebar-item { display:flex; align-items:center; gap:10px; padding:7px 14px; border-radius:6px;
+    font-size:12.5px; color:#8899AA; cursor:pointer; transition:all .15s; border:1px solid transparent; }
+  .sidebar-item:hover { color:#E2E8F0; background:rgba(0,240,255,0.04); }
+  .sidebar-item.active { color:#00F0FF; background:rgba(0,240,255,0.07); border-color:rgba(0,240,255,0.12); }
+  .sidebar-item.active svg { color:#00F0FF; }
+
+  .severity-high { color:#FF3B3B; background:rgba(255,59,59,0.1); border:1px solid rgba(255,59,59,0.2); }
+  .severity-medium { color:#FFB800; background:rgba(255,184,0,0.1); border:1px solid rgba(255,184,0,0.2); }
+  .severity-low { color:#00B4D8; background:rgba(0,180,216,0.1); border:1px solid rgba(0,180,216,0.2); }
+  .severity-info { color:#8899AA; background:rgba(136,153,170,0.08); border:1px solid rgba(136,153,170,0.15); }
+
+  .tab-btn { padding:6px 14px; font-size:12px; border-radius:5px; color:#8899AA; cursor:pointer;
+    transition:all .15s; border:1px solid transparent; background:transparent; }
+  .tab-btn:hover { color:#E2E8F0; }
+  .tab-btn.active { color:#00F0FF; background:rgba(0,240,255,0.07); border-color:rgba(0,240,255,0.15); }
+
+  .data-row { display:grid; grid-template-columns:140px 1fr; gap:4px 12px; padding:4px 0;
+    border-bottom:1px solid rgba(26,39,68,0.4); font-size:12px; }
+  .data-row:last-child { border-bottom:none; }
+  .data-label { color:#556677; font-family:'JetBrains Mono',monospace; font-size:11px; }
+  .data-value { color:#E2E8F0; font-family:'JetBrains Mono',monospace; font-size:11.5px; word-break:break-all; }
+
+  .code-line { display:grid; grid-template-columns:52px 70px 1fr; gap:0; padding:1px 0; font-size:12px;
+    font-family:'JetBrains Mono',monospace; line-height:1.7; cursor:default; border-left:2px solid transparent; }
+  .code-line:hover { background:rgba(0,240,255,0.03); }
+  .code-line.suspicious { background:rgba(255,59,59,0.06); border-left-color:#FF3B3B; }
+  .code-line.suspicious:hover { background:rgba(255,59,59,0.1); }
+  .code-line.selected { background:rgba(0,240,255,0.08); border-left-color:#00F0FF; }
+  .code-line .ln { color:#3A4A5E; text-align:right; padding-right:12px; user-select:none; font-size:11px; }
+  .code-line .addr { color:#556677; user-select:none; font-size:11px; }
+  .code-line .instr { color:#8899AA; }
+  .code-line .instr .op { color:#00B4D8; }
+  .code-line .instr .reg { color:#00FF88; }
+  .code-line .instr .num { color:#FF6B35; }
+  .code-line .instr .str { color:#FFB800; }
+  .code-line .instr .cmt { color:#3A4A5E; font-style:italic; }
+  .code-line.suspicious .instr .op { color:#FF3B3B; }
+
+  .timeline-item { display:grid; grid-template-columns:80px 8px 1fr; gap:0 12px; padding:5px 0; font-size:12px; }
+  .timeline-time { color:#556677; font-family:'JetBrains Mono',monospace; font-size:11px; text-align:right; padding-top:1px; }
+  .timeline-dot { position:relative; }
+  .timeline-dot::before { content:''; position:absolute; left:2px; top:6px; width:5px; height:5px;
+    border-radius:50%; background:#1A2744; }
+  .timeline-dot.event-red::before { background:#FF3B3B; box-shadow:0 0 6px rgba(255,59,59,0.4); }
+  .timeline-dot.event-orange::before { background:#FF6B35; box-shadow:0 0 6px rgba(255,107,53,0.4); }
+  .timeline-dot.event-yellow::before { background:#FFB800; box-shadow:0 0 6px rgba(255,184,0,0.3); }
+  .timeline-dot.event-blue::before { background:#00B4D8; box-shadow:0 0 6px rgba(0,180,216,0.3); }
+  .timeline-dot.event-green::before { background:#00FF88; box-shadow:0 0 6px rgba(0,255,136,0.3); }
+  .timeline-line { position:absolute; left:4px; top:14px; bottom:-5px; width:1px; background:#1A2744; }
+
+  .finding-card { padding:10px 12px; border-radius:6px; border:1px solid rgba(26,39,68,0.6);
+    background:rgba(13,21,38,0.5); cursor:pointer; transition:all .15s; }
+  .finding-card:hover { border-color:rgba(0,240,255,0.15); background:rgba(13,21,38,0.8); }
+  .finding-card.active { border-color:rgba(0,240,255,0.25); background:rgba(0,240,255,0.04); }
+
+  .stat-card { position:relative; overflow:hidden; }
+  .stat-card::after { content:''; position:absolute; top:0; right:0; width:60px; height:60px;
+    border-radius:50%; filter:blur(30px); opacity:0.08; pointer-events:none; }
+  .stat-card.sc-cyan::after { background:#00F0FF; }
+  .stat-card.sc-red::after { background:#FF3B3B; }
+  .stat-card.sc-yellow::after { background:#FFB800; }
+  .stat-card.sc-orange::after { background:#FF6B35; }
+
+  .process-tree-node { padding:3px 8px; font-size:11.5px; font-family:'JetBrains Mono',monospace;
+    border-radius:4px; display:inline-flex; align-items:center; gap:6px; }
+  .process-tree-node.malicious { background:rgba(255,59,59,0.1); border:1px solid rgba(255,59,59,0.2); color:#FF3B3B; }
+  .process-tree-node.injected { background:rgba(255,107,53,0.1); border:1px solid rgba(255,107,53,0.2); color:#FF6B35; }
+  .process-tree-node.normal { background:rgba(0,180,216,0.06); border:1px solid rgba(0,180,216,0.15); color:#8899AA; }
+
+  @keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:0.4} }
+  .pulse-dot { animation: pulse-dot 2s ease-in-out infinite; }
+  @keyframes scan-line { 0%{transform:translateY(-100%)} 100%{transform:translateY(100%)} }
+
+  @media (max-width:1024px) {
+    #sidebar { position:fixed; z-index:50; transform:translateX(-100%); transition:transform .2s; }
+    #sidebar.open { transform:translateX(0); }
+    #sidebar-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:40; }
+    #sidebar-overlay.show { display:block; }
+  }
+</style>
+</head>
+<body class="bg-grid">
+<div id="sidebar-overlay" onclick="toggleSidebar()"></div>
+<div id="app" class="flex h-screen w-screen overflow-hidden">
+
+<!-- 侧边栏 -->
+<aside id="sidebar" class="w-[218px] min-w-[218px] h-full flex flex-col border-r border-cs-border bg-cs-bg2/90 backdrop-blur-md">
+  <div class="px-4 py-3 border-b border-cs-border flex items-center gap-2.5">
+    <div class="w-7 h-7 rounded-md bg-gradient-to-br from-cs-cyan to-cs-blue flex items-center justify-center flex-shrink-0">
+      <i data-lucide="shield-check" class="w-4 h-4 text-cs-bg"></i>
+    </div>
+    <div>
+      <div class="text-[13px] font-display font-semibold text-cs-text tracking-tight">CyberShield</div>
+      <div class="text-[9.5px] text-cs-text3 font-mono tracking-wider">v3.2.1</div>
+    </div>
+  </div>
+  <nav class="flex-1 overflow-y-auto px-2.5 py-3 flex flex-col gap-0.5" id="sidebar-nav"></nav>
+  <div class="px-3.5 py-3 border-t border-cs-border">
+    <div class="flex items-center gap-2.5">
+      <div class="w-7 h-7 rounded-full bg-cs-card2 border border-cs-border flex items-center justify-center text-[10px] font-mono text-cs-cyan">SA</div>
+      <div class="flex-1 min-w-0">
+        <div class="text-[11.5px] text-cs-text truncate">Analyst-07</div>
+        <div class="text-[10px] text-cs-text3">Tier 3 — SOC</div>
+      </div>
+      <i data-lucide="log-out" class="w-3.5 h-3.5 text-cs-text3 cursor-pointer hover:text-cs-red transition-colors"></i>
+    </div>
+  </div>
+</aside>
+
+<!-- 主内容区 -->
+<main class="flex-1 flex flex-col min-w-0 h-full">
+  <!-- 顶部栏 -->
+  <header id="topbar" class="h-11 min-h-[44px] border-b border-cs-border flex items-center justify-between px-4 bg-cs-bg2/60 backdrop-blur-sm">
+    <div class="flex items-center gap-3">
+      <button id="sidebar-toggle" class="lg:hidden p-1 rounded hover:bg-cs-card" onclick="toggleSidebar()">
+        <i data-lucide="menu" class="w-4 h-4 text-cs-text2"></i>
+      </button>
+      <div id="topbar-breadcrumb" class="flex items-center gap-2 text-[12px]">
+        <span class="text-cs-text3">CyberShield</span>
+        <i data-lucide="chevron-right" class="w-3 h-3 text-cs-text3"></i>
+        <span id="topbar-page" class="text-cs-text">Dashboard</span>
+      </div>
+    </div>
+    <div class="flex items-center gap-4">
+      <div class="hidden sm:flex items-center gap-1.5 text-[11px] text-cs-green font-mono">
+        <span class="w-1.5 h-1.5 rounded-full bg-cs-green pulse-dot"></span>
+        Systems Operational
+      </div>
+      <div class="hidden md:flex items-center gap-3 text-[11px] text-cs-text3 font-mono">
+        <span>CPU: 34%</span>
+        <span>MEM: 61%</span>
+        <span>SANDBOX: 2/8</span>
+      </div>
+      <button class="relative p-1.5 rounded hover:bg-cs-card transition-colors">
+        <i data-lucide="bell" class="w-3.5 h-3.5 text-cs-text2"></i>
+        <span class="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-cs-red rounded-full text-[8px] font-bold flex items-center justify-center text-white">3</span>
+      </button>
+    </div>
+  </header>
+  <!-- 页面容器 -->
+  <div id="page-container" class="flex-1 overflow-y-auto overflow-x-hidden"></div>
+</main>
+</div>
+
+<script>
+// ============================================================
+// 数据定义
+// ============================================================
+const NAV_ITEMS = [
+  { id:'dashboard', icon:'layout-dashboard', label:'Dashboard' },
+  { id:'upload', icon:'upload', label:'Upload Sample' },
+  { id:'history', icon:'clock', label:'Sample History' },
+  { id:'intelligence', icon:'search', label:'File Intelligence' },
+  { id:'divider1' },
+  { id:'static', icon:'file-code-2', label:'Static Analysis' },
+  { id:'dynamic', icon:'activity', label:'Dynamic Behavior' },
+  { id:'memory', icon:'cpu', label:'Memory Analysis' },
+  { id:'network', icon:'globe', label:'Network Analysis' },
+  { id:'divider2' },
+  { id:'ioc', icon:'database', label:'IOC Database' },
+  { id:'reports', icon:'file-text', label:'Reports' },
+  { id:'settings', icon:'settings', label:'Settings' },
+];
+
+const SAMPLE = {
+  name:'Emotet_Dropper_x64.dll', sha256:'a3f2b8c1d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1',
+  md5:'4a8b2c1d3e4f5a6b7c8d9e0f1a2b3c4d', size:'284,672', type:'PE32+ DLL (x64)',
+  arch:'x86-64', compiler:'MSVC 19.29.30137', created:'2024-11-28 08:14:22 UTC',
+  modified:'2024-11-28 08:14:23 UTC', signature:'Invalid — No valid digital signature found',
+  entropy:'7.82 / 8.0', entropyStatus:'HIGH',
+  sections:[
+    {name:'.text', vsize:'0x0012A400', rsize:'0x0012A000', chars:'RX', entropy:'6.94'},
+    {name:'.rdata', vsize:'0x0003E200', rsize:'0x0003E000', chars:'R', entropy:'5.82'},
+    {name:'.data', vsize:'0x0000A600', rsize:'0x00004200', chars:'RW', entropy:'7.91'},
+    {name:'.rsrc', vsize:'0x00000800', rsize:'0x00000800', chars:'R', entropy:'3.12'},
+    {name:'.reloc', vsize:'0x0003C000', rsize:'0x0003BC00', chars:'R', entropy:'1.45'},
+  ],
+  imports:[
+    {dll:'kernel32.dll', apis:['VirtualAllocEx','WriteProcessMemory','CreateRemoteThread','OpenProcess','VirtualFree','IsDebuggerPresent','GetCurrentProcessId','CreateFileW','WriteFile']},
+    {dll:'ntdll.dll', apis:['NtQueryInformationProcess','NtUnmapViewOfSection','RtlDecompressBuffer']},
+    {dll:'user32.dll', apis:['GetAsyncKeyState','GetForegroundWindow','SetWindowsHookExA']},
+    {dll:'winhttp.dll', apis:['WinHttpOpen','WinHttpConnect','WinHttpSendRequest','WinHttpReadData']},
+    {dll:'urlmon.dll', apis:['URLDownloadToFileW']},
+    {dll:'advapi32.dll', apis:['RegSetValueExA','CryptStringToBinary','OpenProcessToken']},
+  ],
+  exports:[{name:'DllRegisterServer', ordinal:'-', addr:'0x00132A10'},{name:'DllUnregisterServer', ordinal:'-', addr:'0x00132A50'}],
+  embedded:['RT_ICON (3)','RT_MANIFEST (1)','RT_VERSION (1)'],
+};
+
+const YARA_RESULTS = [
+  {rule:'Emotet_Dropper_Generic_v4', severity:'HIGH', tags:['emotet','dropper','trojan'], desc:'Pattern matches known Emotet downloader module structure and payload delivery mechanism.'},
+  {rule:'PE_Section_HighEntropy_Data', severity:'HIGH', tags:['packed','encrypted'], desc:'The .data section exhibits entropy of 7.91, strongly indicating packed or encrypted content.'},
+  {rule:'Suspicious_API_Process_Injection', severity:'HIGH', tags:['injection','process'], desc:'Combination of VirtualAllocEx + WriteProcessMemory + CreateRemoteThread detected — classic process injection pattern.'},
+  {rule:'Anti_Debugging_Techniques', severity:'MEDIUM', tags:['anti-debug','evasion'], desc:'Uses IsDebuggerPresent and NtQueryInformationProcess to detect analysis environments.'},
+  {rule:'Keylogger_Behavior', severity:'MEDIUM', tags:['keylogger','input'], desc:'Imports GetAsyncKeyState and SetWindowsHookExA, consistent with keylogging functionality.'},
+  {rule:'Network_C2_Communication', severity:'HIGH', tags:['c2','network'], desc:'Contains hardcoded C2 URLs and uses WinHTTP for encrypted command-and-control communication.'},
+  {rule:'Registry_Persistence', severity:'MEDIUM', tags:['persistence','registry'], desc:'References Run keys for establishing persistence across system reboots.'},
+  {rule:'Obfuscated_String_Detection', severity:'LOW', tags:['obfuscation'], desc:'Multiple encoded strings detected — likely Base64/ XOR obfuscation used for payload delivery.'},
+];
+
+const FINDINGS = [
+  {id:'f1', title:'Process Injection via WriteProcessMemory', severity:'HIGH', api:'WriteProcessMemory', offset:'0x00401227',
+   evidence:'Sequential call pattern: VirtualAllocEx → WriteProcessMemory → CreateRemoteThread at offsets 0x00401157, 0x00401227, 0x00401300.',
+   explanation:'This is a classic process injection technique (T1055). The malware allocates executable memory in a remote process, writes shellcode into it, and creates a remote thread to execute it. This allows the malicious payload to run under a legitimate process context, evading process-based detection.'},
+  {id:'f2', title:'Anti-Debugging Check', severity:'MEDIUM', api:'IsDebuggerPresent', offset:'0x004010A0',
+   evidence:'Direct call to IsDebuggerPresent followed by conditional jump (JNZ) to evasion routine at 0x00401200.',
+   explanation:'The sample checks if it is being debugged using the IsDebuggerPresent API (T1622). If a debugger is detected, execution jumps to an evasion path that likely terminates or behaves benignly to avoid analysis.'},
+  {id:'f3', title:'Remote Memory Allocation', severity:'HIGH', api:'VirtualAllocEx', offset:'0x00401157',
+   evidence:'Called with process handle -1 (pseudo-handle) and PAGE_EXECUTE_READWRITE (0x40) memory protection flags.',
+   explanation:'VirtualAllocEx with PAGE_EXECUTE_READWRITE allocates memory that is both writable and executable (T1055.001). The RWX protection is a strong indicator of shellcode injection. Legitimate applications rarely need executable writeable memory in remote processes.'},
+  {id:'f4', title:'C2 Communication Attempt', severity:'HIGH', api:'WinHttpSendRequest', offset:'0x00401407',
+   evidence:'Hardcoded URL reference at RIP+0x2A0 points to obfuscated domain string. Preceded by WinHttpOpen and WinHttpConnect calls.',
+   explanation:'The malware establishes an HTTP connection to a command-and-control server (T1071.001). The URL is constructed from obfuscated strings to evade static detection. Communication likely uses custom encryption for C2 commands.'},
+  {id:'f5', title:'Keylogging Capability', severity:'MEDIUM', api:'GetAsyncKeyState', offset:'0x00401580',
+   evidence:'GetAsyncKeyState called inside a polling loop with 10ms sleep interval. Results buffered to encrypted file.',
+   explanation:'The sample implements a polling-based keylogger (T1056.001) by repeatedly calling GetAsyncKeyState for each virtual key code. Captured keystrokes are likely encrypted and staged for exfiltration to the C2 server.'},
+  {id:'f6', title:'Registry Persistence Mechanism', severity:'MEDIUM', api:'RegSetValueExA', offset:'0x004016A0',
+   evidence:'Writes value to HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run with path to dropped executable.',
+   explanation:'The malware establishes persistence (T1547.001) by creating a Run registry key pointing to the dropped payload. This ensures execution on every user login, surviving system reboots.'},
+  {id:'f7', title:'Payload Decompression', severity:'LOW', api:'RtlDecompressBuffer', offset:'0x00401730',
+   evidence:'Called with COMPRESSION_FORMAT_LZNT1 on data from high-entropy .data section. Output size: 524,288 bytes.',
+   explanation:'The embedded payload in the .data section is LZNT1-compressed (T1027.001). RtlDecompressBuffer decompresses it in memory before injection. This explains the high entropy and is a common technique to evade signature-based detection.'},
+];
+
+const CODE_LINES = [
+  {ln:240, addr:'00401000', code:'<span class="op">push</span> <span class="reg">rbp</span>', susp:false},
+  {ln:241, addr:'00401001', code:'<span class="op">mov</span> <span class="reg">rbp</span>, <span class="reg">rsp</span>', susp:false},
+  {ln:242, addr:'00401004', code:'<span class="op">sub</span> <span class="reg">rsp</span>, <span class="num">48h</span>', susp:false},
+  {ln:243, addr:'00401008', code:'<span class="op">xor</span> <span class="reg">eax</span>, <span class="reg">eax</span> <span class="cmt">; 清零寄存器</span>', susp:false},
+  {ln:244, addr:'0040100A', code:'<span class="op">call</span> <span class="op">GetModuleHandleW</span>', susp:false},
+  {ln:245, addr:'0040100F', code:'<span class="op">mov</span> [<span class="reg">rbp</span>+<span class="num">8h</span>], <span class="reg">rax</span>', susp:false},
+  {ln:246, addr:'00401013', code:'<span class="op">lea</span> <span class="reg">rcx</span>, [<span class="reg">rip</span>+<span class="num">0x150</span>] <span class="cmt">; "kernel32.dll"</span>', susp:false},
+  {ln:247, addr:'0040101A', code:'<span class="op">call</span> <span class="op">GetModuleHandleA</span>', susp:false},
+  {ln:248, addr:'0040101F', code:'<span class="op">test</span> <span class="reg">rax</span>, <span class="reg">rax</span>', susp:false},
+  {ln:249, addr:'00401022', code:'<span class="op">jz</span> <span class="num">0x004010F0</span> <span class="cmt">; 跳转到错误处理</span>', susp:false},
+  {ln:250, addr:'00401028', code:'<span class="op">mov</span> [<span class="reg">rbp</span>+<span class="num">10h</span>], <span class="reg">rax</span>', susp:false},
+  {ln:251, addr:'0040102C', code:'<span class="op">lea</span> <span class="reg">rdx</span>, [<span class="reg">rip</span>+<span class="num">0x2A8</span>] <span class="cmt"; >; "VirtualAllocEx"</span>', susp:false},
+  {ln:252, addr:'00401033', code:'<span class="op">call</span> <span class="op">GetProcAddress</span>', susp:false},
+  {ln:253, addr:'00401038', code:'<span class="op">mov</span> [<span class="reg">rbp</span>+<span class="num">18h</span>], <span class="reg">rax</span> <span class="cmt">; 保存函数指针</span>', susp:false},
+  {ln:254, addr:'0040103C', code:'<span class="op">lea</span> <span class="reg">rdx</span>, [<span class="reg">rip</span>+<span class="num">0x2C0</span>] <span class="cmt">; "WriteProcessMemory"</span>', susp:false},
+  {ln:255, addr:'00401043', code:'<span class="op">call</span> <span class="op">GetProcAddress</span>', susp:false},
+  {ln:256, addr:'00401048', code:'<span class="op">mov</span> [<span class="reg">rbp</span>+<span class="num">20h</span>], <span class="reg">rax</span>', susp:false},
+  {ln:257, addr:'0040104C', code:'<span class="op">lea</span> <span class="reg">rdx</span>, [<span class="reg">rip</span>+<span class="num">0x2D8</span>] <span class="cmt">; "CreateRemoteThread"</span>', susp:false},
+  {ln:258, addr:'00401053', code:'<span class="op">call</span> <span class="op">GetProcAddress</span>', susp:false},
+  {ln:259, addr:'00401058', code:'<span class="op">mov</span> [<span class="reg">rbp</span>+<span class="num">28h</span>], <span class="reg">rax</span>', susp:false},
+  {ln:260, addr:'0040105C', code:'', susp:false},
+  {ln:261, addr:'00401060', code:'<span class="cmt">; === 反调试检测 ===</span>', susp:false},
+  {ln:262, addr:'004010A0', code:'<span class="op">call</span> <span class="op">IsDebuggerPresent</span> <span class="cmt">; [SUSPICIOUS]</span>', susp:true, finding:'f2'},
+  {ln:263, addr:'004010A5', code:'<span class="op">test</span> <span class="reg">eax</span>, <span class="reg">eax</span>', susp:false},
+  {ln:264, addr:'004010A7', code:'<span class="op">jnz</span> <span class="num">0x00401200</span> <span class="cmt">; 检测到调试器 → 跳转</span>', susp:false},
+  {ln:265, addr:'004010AD', code:'<span class="op">mov</span> <span class="reg">rcx</span>, <span class="num">0xFFFFFFFF</span> <span class="cmt">; ProcessBasicInformation</span>', susp:false},
+  {ln:266, addr:'004010B4', code:'<span class="op">call</span> <span class="op">NtQueryInformationProcess</span>', susp:false},
+  {ln:267, addr:'004010B9', code:'<span class="op">test</span> <span class="reg">eax</span>, <span class="reg">eax</span>', susp:false},
+  {ln:268, addr:'004010BB', code:'<span class="op">jl</span> <span class="num">0x00401200</span> <span class="cmt">; 二次反调试检查</span>', susp:false},
+  {ln:269, addr:'004010C1', code:'', susp:false},
+  {ln:270, addr:'004010C5', code:'<span class="cmt">; === 解压嵌入载荷 ===</span>', susp:false},
+  {ln:271, addr:'004010D0', code:'<span class="op">lea</span> <span class="reg">rcx</span>, [<span class="reg">rip</span>+<span class="num">0x500</span>] <span class="cmt">; 压缩数据指针</span>', susp:false},
+  {ln:272, addr:'004010D7', code:'<span class="op">mov</span> <span class="reg">edx</span>, <span class="num">2</span> <span class="cmt">; COMPRESSION_FORMAT_LZNT1</span>', susp:false},
+  {ln:273, addr:'004010DC', code:'<span class="op">call</span> <span class="op">RtlDecompressBuffer</span>', susp:false},
+  {ln:274, addr:'004010E1', code:'<span class="op">test</span> <span class="reg">eax</span>, <span class="reg">eax</span>', susp:false},
+  {ln:275, addr:'004010E3', code:'<span class="op">jnz</span> <span class="num">0x00401200</span> <span class="cmt">; 解压失败 → 退出</span>', susp:false},
+  {ln:276, addr:'004010E9', code:'<span class="op">mov</span> [<span class="reg">rbp</span>+<span class="num">30h</span>], <span class="reg">rax</span> <span class="cmt">; 解压后载荷地址</span>', susp:false},
+  {ln:277, addr:'004010ED', code:'', susp:false},
+  {ln:278, addr:'004010F0', code:'<span class="cmt">; === 进程注入序列 ===</span>', susp:false},
+  {ln:279, addr:'00401110', code:'<span class="op">mov</span> <span class="reg">rcx</span>, <span class="num">0xFFFFFFFF</span> <span class="cmt">; hProcess = -1</span>', susp:false},
+  {ln:280, addr:'00401117', code:'<span class="op">xor</span> <span class="reg">rdx</span>, <span class="reg">rdx</span> <span class="cmt">; baseAddress = NULL</span>', susp:false},
+  {ln:281, addr:'00401119', code:'<span class="op">mov</span> <span class="reg">r8</span>, <span class="num">0x80000</span> <span class="cmt">; size = 524288</span>', susp:false},
+  {ln:282, addr:'00401121', code:'<span class="op">mov</span> <span class="reg">r9d</span>, <span class="num">0x40</span> <span class="cmt">; PAGE_EXECUTE_READWRITE</span>', susp:false},
+  {ln:283, addr:'00401128', code:'<span class="op">mov</span> [<span class="reg">rsp</span>+<span class="num">20h</span>], <span class="num">0</span>', susp:false},
+  {ln:284, addr:'00401157', code:'<span class="op">call</span> <span class="op">VirtualAllocEx</span> <span class="cmt">; [SUSPICIOUS]</span>', susp:true, finding:'f3'},
+  {ln:285, addr:'0040115C', code:'<span class="op">mov</span> [<span class="reg">rbp</span>+<span class="num">38h</span>], <span class="reg">rax</span> <span class="cmt">; 保存远程内存地址</span>', susp:false},
+  {ln:286, addr:'00401160', code:'<span class="op">test</span> <span class="reg">rax</span>, <span class="reg">rax</span>', susp:false},
+  {ln:287, addr:'00401163', code:'<span class="op">jz</span> <span class="num">0x00401200</span> <span class="cmt">; 分配失败</span>', susp:false},
+  {ln:288, addr:'00401169', code:'', susp:false},
+  {ln:289, addr:'00401170', code:'<span class="op">mov</span> <span class="reg">rcx</span>, <span class="num">0xFFFFFFFF</span> <span class="cmt">; hProcess</span>', susp:false},
+  {ln:290, addr:'00401177', code:'<span class="op">mov</span> <span class="reg">rdx</span>, [<span class="reg">rbp</span>+<span class="num">38h</span>] <span class="cmt">; 远程基址</span>', susp:false},
+  {ln:291, addr:'0040117B', code:'<span class="op">lea</span> <span class="reg">r8</span>, [<span class="reg">rbp</span>+<span class="num">30h</span>] <span class="cmt">; 载荷缓冲区</span>', susp:false},
+  {ln:292, addr:'0040117F', code:'<span class="op">mov</span> <span class="reg">r9</span>, <span class="num">0x80000</span> <span class="cmt">; nSize</span>', susp:false},
+  {ln:293, addr:'00401189', code:'<span class="op">mov</span> [<span class="reg">rsp</span>+<span class="num">20h</span>], <span class="num">0</span> <span class="cmt">; lpNumberOfBytesWritten</span>', susp:false},
+  {ln:294, addr:'00401227', code:'<span class="op">call</span> <span class="op">WriteProcessMemory</span> <span class="cmt">; [SUSPICIOUS]</span>', susp:true, finding:'f1'},
+  {ln:295, addr:'0040122C', code:'<span class="op">test</span> <span class="reg">eax</span>, <span class="reg">eax</span>', susp:false},
+  {ln:296, addr:'0040122E', code:'<span class="op">jz</span> <span class="num">0x00401200</span> <span class="cmt">; 写入失败</span>', susp:false},
+  {ln:297, addr:'00401234', code:'', susp:false},
+  {ln:298, addr:'00401240', code:'<span class="op">mov</span> <span class="reg">rcx</span>, <span class="num">0xFFFFFFFF</span>', susp:false},
+  {ln:299, addr:'00401247', code:'<span class="op">xor</span> <span class="reg">rdx</span>, <span class="reg">rdx</span> <span class="cmt">; lpThreadAttributes = NULL</span>', susp:false},
+  {ln:300, addr:'00401249', code:'<span class="op">xor</span> <span class="reg">r8</span>, <span class="reg">r8</span> <span class="cmt">; lpStackSize = 0</span>', susp:false},
+  {ln:301, addr:'0040124C', code:'<span class="op">mov</span> <span class="reg">r9</span>, [<span class="reg">rbp</span>+<span class="num">38h</span>] <span class="cmt">; lpStartAddress = 远程内存</span>', susp:false},
+  {ln:302, addr:'00401250', code:'<span class="op">mov</span> [<span class="reg">rsp</span>+<span class="num">20h</span>], <span class="num">0</span>', susp:false},
+  {ln:303, addr:'00401300', code:'<span class="op">call</span> <span class="op">CreateRemoteThread</span> <span class="cmt">; [SUSPICIOUS]</span>', susp:true, finding:'f1'},
+  {ln:304, addr:'00401305', code:'<span class="op">mov</span> [<span class="reg">rbp</span>+<span class="num">40h</span>], <span class="reg">rax</span> <span class="cmt">; 保存线程句柄</span>', susp:false},
+  {ln:305, addr:'00401309', code:'<span class="op">test</span> <span class="reg">rax</span>, <span class="reg">rax</span>', susp:false},
+  {ln:306, addr:'0040130C', code:'<span class="op">jz</span> <span class="num">0x00401200</span> <span class="cmt">; 线程创建失败</span>', susp:false},
+  {ln:307, addr:'00401312', code:'', susp:false},
+  {ln:308, addr:'00401320', code:'<span class="cmt">; === C2 通信初始化 ===</span>', susp:false},
+  {ln:309, addr:'00401330', code:'<span class="op">lea</span> <span class="reg">rcx</span>, [<span class="str">"WinHTTP/1.1"</span>]', susp:false},
+  {ln:310, addr:'00401337', code:'<span class="op">call</span> <span class="op">WinHttpOpen</span>', susp:false},
+  {ln:311, addr:'0040133C', code:'<span class="op">mov</span> [<span class="reg">rbp</span>+<span class="num">48h</span>], <span class="reg">rax</span>', susp:false},
+  {ln:312, addr:'00401340', code:'<span class="op">lea</span> <span class="reg">rdx</span>, [<span class="reg">rip</span>+<span class="num">0x2A0</span>] <span class="cmt"; >; 混淆域名</span>', susp:false},
+  {ln:313, addr:'00401347', code:'<span class="op">mov</span> <span class="reg">r8d</span>, <span class="num">443</span> <span class="cmt">; HTTPS端口</span>', susp:false},
+  {ln:314, addr:'0040134E', code:'<span class="op">call</span> <span class="op">WinHttpConnect</span>', susp:false},
+  {ln:315, addr:'00401353', code:'<span class="op">lea</span> <span class="reg">rcx</span>, [<span class="reg">rip</span>+<span class="num">0x2A0</span>] <span class="cmt"; >; URL字符串引用</span>', susp:false},
+  {ln:316, addr:'00401407', code:'<span class="op">call</span> <span class="op">WinHttpSendRequest</span> <span class="cmt">; [SUSPICIOUS]</span>', susp:true, finding:'f4'},
+  {ln:317, addr:'0040140C', code:'<span class="op">test</span> <span class="reg">eax</span>, <span class="reg">eax</span>', susp:false},
+  {ln:318, addr:'0040140E', code:'<span class="op">jz</span> <span class="num">0x00401500</span> <span class="cmt">; 通信失败 → 重试</span>', susp:false},
+  {ln:319, addr:'00401414', code:'', susp:false},
+  {ln:320, addr:'00401500', code:'<span class="cmt">; === 键盘记录循环 ===</span>', susp:false},
+  {ln:321, addr:'00401510', code:'<span class="op">mov</span> <span class="reg">ecx</span>, <span class="num">0x01</span>', susp:false},
+  {ln:322, addr:'00401515', code:'<span class="op">call</span> <span class="op">Sleep</span> <span class="cmt">; 10ms 轮询间隔</span>', susp:false},
+  {ln:323, addr:'00401580', code:'<span class="op">call</span> <span class="op">GetAsyncKeyState</span> <span class="cmt">; [SUSPICIOUS]</span>', susp:true, finding:'f5'},
+  {ln:324, addr:'00401585', code:'<span class="op">test</span> <span class="reg">eax</span>, <span class="num">0x8000</span>', susp:false},
+  {ln:325, addr:'0040158A', code:'<span class="op">jz</span> <span class="num">0x00401510</span> <span class="cmt">; 无按键 → 继续轮询</span>', susp:false},
+  {ln:326, addr:'00401590', code:'<span class="op">mov</span> [<span class="reg">rbp</span>+<span class="num">50h</span>], <span class="reg">al</span> <span class="cmt"; >; 缓存按键值</span>', susp:false},
+  {ln:327, addr:'00401593', code:'<span class="op">jmp</span> <span class="num">0x00401510</span> <span class="cmt">; 循环</span>', susp:false},
+];
+
+const TIMELINE = [
+  {time:'10:01:01', text:'Process created: Emotet_Dropper_x64.dll (PID 4892)', type:'blue'},
+  {time:'10:01:02', text:'Loaded module: kernel32.dll → 0x7FFE12340000', type:'blue'},
+  {time:'10:01:02', text:'Loaded module: ntdll.dll → 0x7FFE11000000', type:'blue'},
+  {time:'10:01:03', text:'API called: IsDebuggerPresent → returned FALSE', type:'yellow'},
+  {time:'10:01:03', text:'API called: NtQueryInformationProcess → PebDebugPort = 0', type:'yellow'},
+  {time:'10:01:04', text:'Decompressed embedded payload (524,288 bytes via LZNT1)', type:'blue'},
+  {time:'10:01:04', text:'File created: C:\\Users\\Public\\svchost_up.exe (284,672 bytes)', type:'orange'},
+  {time:'10:01:06', text:'Registry modified: HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run\\WindowsUpdate = "C:\\Users\\Public\\svchost_up.exe"', type:'orange'},
+  {time:'10:01:08', text:'Process injected: svchost.exe (PID 1024) — RWX memory allocated at 0x0000026A00100000', type:'red'},
+  {time:'10:01:08', text:'Remote thread created in PID 1024 → StartAddress: 0x0000026A00100000', type:'red'},
+  {time:'10:01:10', text:'DNS query: gate.malware-cdn[.]net → 185.234.72.11', type:'orange'},
+  {time:'10:01:11', text:'DNS query: cdn.update-srv[.]net → 185.234.72.11', type:'orange'},
+  {time:'10:01:12', text:'TCP connection: 192.168.1.105:54812 → 185.234.72.11:443 (TLS 1.2)', type:'red'},
+  {time:'10:01:15', text:'HTTP POST to /gate.php — 4,812 bytes sent (encrypted)', type:'red'},
+  {time:'10:01:18', text:'HTTP response received — 12,204 bytes (encrypted C2 response)', type:'red'},
+  {time:'10:01:20', text:'File created: C:\\Temp\\tmpABCD.dat (12,204 bytes — encrypted payload)', type:'orange'},
+  {time:'10:01:22', text:'Process started: svchost_up.exe (PID 5104) from C:\\Users\\Public\\', type:'orange'},
+  {time:'10:01:25', text:'Keylogging activity detected — GetAsyncKeyState polling loop active in PID 5104', type:'red'},
+  {time:'10:01:30', text:'Second C2 heartbeat — POST /gate.php (2,048 bytes)', type:'red'},
+  {time:'10:01:35', text:'File accessed: C:\\Users\\admin\\Documents\\financial_report.xlsx', type:'orange'},
+];
+
+const RECENT_SAMPLES = [
+  {name:'Emotet_Dropper_x64.dll', hash:'a3f2b8c1...e9f0a1', type:'PE32+ DLL', risk:'CRITICAL', status:'Complete', date:'2024-12-01 14:23'},
+  {name:'trickbot_loader.exe', hash:'7b1c9d3e...f4e2b8', type:'PE32 EXE', risk:'HIGH', status:'Complete', date:'2024-12-01 13:10'},
+  {name:'cobaltstrike_beacon.bin', hash:'2e4f6a8b...c1d3e5', type:'Raw Binary', risk:'CRITICAL', status:'Complete', date:'2024-12-01 11:45'},
+  {name:'qakbot_dll.x86.dll', hash:'9c0d2e1f...a7b5c3', type:'PE32 DLL', risk:'HIGH', status:'Complete', date:'2024-12-01 10:02'},
+  {name:'suspicious_doc.docm', hash:'1a3b5c7d...e9f1a3', type:'OLE2 Compound', risk:'MEDIUM', status:'Complete', date:'2024-11-30 22:18'},
+  {name:'raccoon_stealer.exe', hash:'4e6d8c0a...b2f4e6', type:'PE32 EXE', risk:'HIGH', status:'Complete', date:'2024-11-30 19:33'},
+  {name:'unknown_ps1.ps1', hash:'f8e0d2c4...a6b8c0', type:'PowerShell', risk:'MEDIUM', status:'Analyzing', date:'2024-11-30 17:55'},
+  {name:'redline_stealer.exe', hash:'3b5d7f9a...c1e3a5', type:'PE32 EXE', risk:'HIGH', status:'Queued', date:'2024-11-30 16:40'},
+];
+
+const PROCESSES = [
+  {pid:1024, name:'svchost.exe', path:'C:\\Windows\\System32\\svchost.exe', status:'Injected', mem:'142 MB', threads:12, suspicious:true, note:'Code injection detected — RWX region at 0x2600100000'},
+  {pid:4892, name:'Emotet_Dropper_x64.dll', path:'C:\\Users\\Public\\Emotet_Dropper_x64.dll', status:'Malicious', mem:'38 MB', threads:4, suspicious:true, note:'Original malware process — dropper module'},
+  {pid:5104, name:'svchost_up.exe', path:'C:\\Users\\Public\\svchost_up.exe', status:'Malicious', mem:'56 MB', threads:8, suspicious:true, note:'Dropped payload — keylogging active'},
+  {pid:2048, name:'explorer.exe', path:'C:\\Windows\\explorer.exe', status:'Normal', mem:'128 MB', threads:34, suspicious:false, note:''},
+  {pid:3120, name:'chrome.exe', path:'C:\\Program Files\\Google\\Chrome\\chrome.exe', status:'Normal', mem:'412 MB', threads:48, suspicious:false, note:''},
+  {pid:880, name:'csrss.exe', path:'C:\\Windows\\System32\\csrss.exe', status:'Normal', mem:'14 MB', threads:11, suspicious:false, note:''},
+];
+
+const MEMORY_REGIONS = [
+  {base:'0x0000026A00100000', size:'0x00080000', prot:'RWX', type:'Private', owner:'svchost.exe (1024)', entropy:'7.65', suspicious:true, note:'Unbacked executable memory — injected shellcode'},
+  {base:'0x0000026A00280000', size:'0x00040000', prot:'RW-', type:'Private', owner:'svchost.exe (1024)', entropy:'6.12', suspicious:true, note:'Writable buffer — likely keylog data storage'},
+  {base:'0x00007FFE12340000', size:'0x0012A000', prot:'R-X', type:'Image', owner:'kernel32.dll', entropy:'5.94', suspicious:false, note:''},
+  {base:'0x00007FFE11000000', size:'0x001D8000', prot:'R-X', type:'Image', owner:'ntdll.dll', entropy:'5.88', suspicious:false, note:''},
+  {base:'0x0000026A00400000', size:'0x00020000', prot:'RWX', type:'Private', owner:'svchost_up.exe (5104)', entropy:'7.42', suspicious:true, note:'Additional RWX region — possible second-stage payload'},
+  {base:'0x00007FFE0F000000', size:'0x0008C000', prot:'R-X', type:'Image', owner:'user32.dll', entropy:'5.41', suspicious:false, note:''},
+];
+
+const DNS_QUERIES = [
+  {domain:'gate.malware-cdn[.]net', ip:'185.234.72.11', type:'A', time:'10:01:10', threat:'Malicious', confidence:'99%'},
+  {domain:'cdn.update-srv[.]net', ip:'185.234.72.11', type:'A', time:'10:01:11', threat:'Malicious', confidence:'97%'},
+  {domain:'api.telegram[.]org', ip:'149.154.167.220', type:'A', time:'10:01:45', threat:'Benign', confidence:'95%'},
+  {domain:'ctldl.windowsupdate[.]com', ip:'20.190.159.2', type:'A', time:'10:02:01', threat:'Benign', confidence:'99%'},
+  {domain:'dns.google', ip:'8.8.8.8', type:'A', time:'10:02:05', threat:'Benign', confidence:'100%'},
+  {domain:'backup.c2-emotet[.]xyz', ip:'91.215.85.44', type:'A', time:'10:03:12', threat:'Malicious', confidence:'94%'},
+];
+
+const CONNECTIONS = [
+  {src:'192.168.1.105:54812', dst:'185.234.72.11:443', proto:'TLS 1.2', state:'Established', bytes_sent:'8,244', bytes_recv:'14,108', threat:'Malicious'},
+  {src:'192.168.1.105:54901', dst:'91.215.85.44:8080', proto:'HTTP', state:'Established', bytes_sent:'2,048', bytes_recv:'0', threat:'Malicious'},
+  {src:'192.168.1.105:54888', dst:'149.154.167.220:443', proto:'TLS 1.3', state:'Established', bytes_sent:'1,204', bytes_recv:'3,892', threat:'Benign'},
+  {src:'192.168.1.105:54920', dst:'20.190.159.2:443', proto:'TLS 1.2', state:'Closed', bytes_sent:'512', bytes_recv:'1,024', threat:'Benign'},
+];
+
+const IOCS = [
+  {type:'SHA256', value:'a3f2b8c1d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1', context:'Emotet dropper sample', severity:'HIGH'},
+  {type:'SHA256', value:'b7c9d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9', context:'Dropped payload svchost_up.exe', severity:'HIGH'},
+  {type:'IPv4', value:'185.234.72.11', context:'C2 server — Emotet infrastructure', severity:'CRITICAL'},
+  {type:'IPv4', value:'91.215.85.44', context:'Backup C2 server', severity:'HIGH'},
+  {type:'Domain', value:'gate.malware-cdn[.]net', context:'Primary C2 domain', severity:'CRITICAL'},
+  {type:'Domain', value:'cdn.update-srv[.]net', context:'Secondary C2 domain', severity:'HIGH'},
+  {type:'Domain', value:'backup.c2-emotet[.]xyz', context:'Tertiary C2 domain', severity:'HIGH'},
+  {type:'File', value:'svchost_up.exe', context:'Dropped malicious executable', severity:'HIGH'},
+  {type:'Registry', value:'HKLM\\...\\Run\\WindowsUpdate', context:'Persistence mechanism', severity:'MEDIUM'},
+  {type:'Mutex', value:'Global\\EmotetMutex_{A3F2B8C1}', context:'Malware mutex for single-instance check', severity:'MEDIUM'},
+  {type:'Mutex', value:'Local\\KeylogBuf_4892', context:'Keylog data buffer mutex', severity:'MEDIUM'},
+  {type:'URL', value:'hxxp://185.234.72.11:443/gate.php', context:'C2 gate endpoint', severity:'CRITICAL'},
+];
+
+// ============================================================
+// 应用状态与逻辑
+// ============================================================
+let state = { page:'dashboard', analysisTab:'static', selectedFinding:'f1', selectedCodeLine:null, sidebarOpen:false };
+let charts = {};
+
+function destroyCharts() { Object.values(charts).forEach(c=>{try{c.destroy()}catch(e){}}); charts={}; }
+
+function toggleSidebar() {
+  const sb = document.getElementById('sidebar');
+  const ov = document.getElementById('sidebar-overlay');
+  state.sidebarOpen = !state.sidebarOpen;
+  sb.classList.toggle('open', state.sidebarOpen);
+  ov.classList.toggle('show', state.sidebarOpen);
+}
+
+function navigate(page) {
+  state.page = page;
+  state.selectedFinding = 'f1';
+  state.selectedCodeLine = null;
+  if (state.sidebarOpen) toggleSidebar();
+  render();
+}
+
+function setAnalysisTab(tab) { state.analysisTab = tab; renderPage(); }
+function selectFinding(id) { state.selectedFinding = id; renderPage(); }
+
+function selectCodeLine(idx) {
+  state.selectedCodeLine = idx;
+  const line = CODE_LINES[idx];
+  if (line && line.finding) state.selectedFinding = line.finding;
+  renderPage();
+}
+
+function sevBadge(sev) {
+  const cls = sev==='HIGH'?'severity-high':sev==='MEDIUM'?'severity-medium':sev==='LOW'?'severity-low':'severity-info';
+  return `<span class="${cls} text-[10px] font-mono font-semibold px-2 py-0.5 rounded">${sev}</span>`;
+}
+function riskBadge(risk) {
+  const map = {'CRITICAL':'bg-cs-red/15 text-cs-red border-cs-red/25','HIGH':'bg-cs-orange/15 text-cs-orange border-cs-orange/25','MEDIUM':'bg-cs-yellow/15 text-cs-yellow border-cs-yellow/25','LOW':'bg-cs-blue/15 text-cs-blue border-cs-blue/25','Benign':'bg-cs-green/15 text-cs-green border-cs-green/25','Malicious':'bg-cs-red/15 text-cs-red border-cs-red/25'};
+  const cls = map[risk] || map['LOW'];
+  return `<span class="${cls} text-[10px] font-mono font-semibold px-2 py-0.5 rounded border">${risk}</span>`;
+}
+function statusBadge(s) {
+  const map = {'Complete':'text-cs-green','Analyzing':'text-cs-yellow','Queued':'text-cs-text3','Injected':'text-cs-orange','Malicious':'text-cs-red','Normal':'text-cs-text2','Established':'text-cs-green','Closed':'text-cs-text3'};
+  return `<span class="text-[11px] font-mono ${map[s]||'text-cs-text2'}">${s}</span>`;
+}
+
+// ============================================================
+// 侧边栏渲染
+// ============================================================
+function renderSidebar() {
+  const nav = document.getElementById('sidebar-nav');
+  nav.innerHTML = NAV_ITEMS.map(item => {
+    if (item.id.startsWith('divider')) return '<div class="my-2 border-t border-cs-border/50"></div>';
+    return `<div class="sidebar-item ${state.page===item.id?'active':''}" onclick="navigate('${item.id}')">
+      <i data-lucide="${item.icon}" class="w-[15px] h-[15px] flex-shrink-0"></i><span>${item.label}</span>
+    </div>`;
+  }).join('');
+  lucide.createIcons();
+}
+
+// ============================================================
+// 页面路由
+// ============================================================
+function render() {
+  renderSidebar();
+  document.getElementById('topbar-page').textContent = NAV_ITEMS.find(i=>i.id===state.page)?.label || 'Dashboard';
+  renderPage();
+}
+
+function renderPage() {
+  destroyCharts();
+  const c = document.getElementById('page-container');
+  const pages = { dashboard:renderDashboard, upload:renderUpload, history:renderHistory, intelligence:renderIntelligence,
+    static:renderStaticPage, dynamic:renderDynamicPage, memory:renderMemoryPage, network:renderNetworkPage,
+    ioc:renderIOCPage, reports:renderReportPage, settings:renderSettingsPage, sample:renderSamplePage };
+  c.innerHTML = (pages[state.page] || renderDashboard)();
+  lucide.createIcons();
+  initPageCharts();
+}
+
+// ============================================================
+// 仪表盘
+// ============================================================
+function renderDashboard() {
+  return `<div class="p-4 space-y-4">
+    <!-- 统计卡片 -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      ${statCard('Total Samples','2,847','sc-cyan','trending-up','+124 this week','cs-cyan')}
+      ${statCard('Malware Detected','1,893','sc-red','shield-alert','66.5% detection rate','cs-red')}
+      ${statCard('Pending Analysis','23','sc-yellow','loader','3 critical priority','cs-yellow')}
+      ${statCard('High Risk Samples','412','sc-orange','alert-triangle','14.5% of total','cs-orange')}
+    </div>
+    <!-- 分析趋势 + 威胁类型 -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-3">
+      <div class="lg:col-span-2 glass rounded-lg p-3.5 glow-border">
+        <div class="text-[13px] font-semibold text-cs-text mb-3">Analysis Trend — Last 14 Days</div>
+        <div class="h-[180px]"><canvas id="chart-trend"></canvas></div>
+      </div>
+      <div class="glass rounded-lg p-3.5 glow-border">
+        <div class="text-[13px] font-semibold text-cs-text mb-3">Threat Classification</div>
+        <div class="h-[180px]"><canvas id="chart-types"></canvas></div>
+      </div>
+    </div>
+    <!-- 最近分析 -->
+    <div class="glass rounded-lg glow-border overflow-hidden">
+      <div class="px-3.5 py-2.5 border-b border-cs-border flex items-center justify-between">
+        <div class="text-[13px] font-semibold text-cs-text">Recent Analysis</div>
+        <button class="text-[11px] text-cs-cyan hover:underline" onclick="navigate('history')">View All</button>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-[12px]">
+          <thead><tr class="text-cs-text3 border-b border-cs-border">
+            <th class="text-left font-medium px-3.5 py-2">File Name</th>
+            <th class="text-left font-medium px-3.5 py-2 hidden md:table-cell">Hash (truncated)</th>
+            <th class="text-left font-medium px-3.5 py-2 hidden lg:table-cell">File Type</th>
+            <th class="text-left font-medium px-3.5 py-2">Risk</th>
+            <th class="text-left font-medium px-3.5 py-2">Status</th>
+            <th class="text-left font-medium px-3.5 py-2 hidden sm:table-cell">Date</th>
+          </tr></thead>
+          <tbody>${RECENT_SAMPLES.map((s,i)=>`<tr class="border-b border-cs-border/40 hover:bg-cs-card/50 cursor-pointer transition-colors" onclick="navigate('sample')">
+            <td class="px-3.5 py-2 font-mono text-cs-text">${s.name}</td>
+            <td class="px-3.5 py-2 font-mono text-cs-text3 hidden md:table-cell">${s.hash}</td>
+            <td class="px-3.5 py-2 text-cs-text2 hidden lg:table-cell">${s.type}</td>
+            <td class="px-3.5 py-2">${riskBadge(s.risk)}</td>
+            <td class="px-3.5 py-2">${statusBadge(s.status)}</td>
+            <td class="px-3.5 py-2 font-mono text-cs-text3 hidden sm:table-cell">${s.date}</td>
+          </tr>`).join('')}</tbody>
+        </table>
+      </div>
+    </div>
+  </div>`;
+}
+
+function statCard(label, value, cls, icon, sub, color) {
+  return `<div class="stat-card ${cls} glass rounded-lg p-3.5 glow-border">
+    <div class="flex items-start justify-between mb-2">
+      <span class="text-[11px] text-cs-text3 font-medium">${label}</span>
+      <i data-lucide="${icon}" class="w-3.5 h-3.5 text-${color} opacity-60"></i>
+    </div>
+    <div class="text-[22px] font-display font-bold text-cs-text leading-none mb-1.5">${value}</div>
+    <div class="text-[10.5px] text-cs-text3">${sub}</div>
+  </div>`;
+}
+
+// ============================================================
+// 样本分析页（核心页面）
+// ============================================================
+function renderSamplePage() {
+  const tabs = [{id:'static',label:'Static Analysis'},{id:'code',label:'Code Analysis'},{id:'strings',label:'Strings'},{id:'dynamic',label:'Dynamic'},{id:'memory',label:'Memory'},{id:'network',label:'Network'}];
+  const selFinding = FINDINGS.find(f=>f.id===state.selectedFinding) || FINDINGS[0];
+  return `<div class="flex flex-col h-full">
+    <!-- 文件信息条 -->
+    <div class="border-b border-cs-border bg-cs-bg2/50 px-4 py-2 flex flex-wrap items-center gap-x-5 gap-y-1.5">
+      <div class="flex items-center gap-2">
+        <i data-lucide="file-code-2" class="w-3.5 h-3.5 text-cs-red"></i>
+        <span class="text-[13px] font-mono font-semibold text-cs-text">${SAMPLE.name}</span>
+      </div>
+      <div class="text-[11px] font-mono text-cs-text3">SHA256: <span class="text-cs-text2">${SAMPLE.sha256.substring(0,24)}...</span></div>
+      <div class="text-[11px] font-mono text-cs-text3">Type: <span class="text-cs-text2">${SAMPLE.type}</span></div>
+      <div class="text-[11px] font-mono text-cs-text3">Size: <span class="text-cs-text2">${SAMPLE.size} bytes</span></div>
+      <div class="text-[11px] font-mono text-cs-text3">Entropy: <span class="${SAMPLE.entropyStatus==='HIGH'?'text-cs-red':'text-cs-text2'}">${SAMPLE.entropy}</span></div>
+      ${riskBadge('CRITICAL')}
+    </div>
+    <!-- 标签栏 -->
+    <div class="border-b border-cs-border bg-cs-bg2/30 px-4 py-1.5 flex items-center gap-1 overflow-x-auto">
+      ${tabs.map(t=>`<button class="tab-btn ${state.analysisTab===t.id?'active':''}" onclick="setAnalysisTab('${t.id}')">${t.label}</button>`).join('')}
+      <div class="flex-1"></div>
+      <button class="text-[11px] text-cs-text3 hover:text-cs-cyan transition-colors flex items-center gap-1"><i data-lucide="download" class="w-3 h-3"></i>Export</button>
+    </div>
+    <!-- 主内容区 -->
+    <div class="flex-1 flex min-h-0">
+      <!-- 左侧：分析内容 -->
+      <div class="flex-1 overflow-y-auto p-4 min-w-0">
+        ${state.analysisTab==='static'?renderStaticContent():''}
+        ${state.analysisTab==='code'?renderCodeContent():''}
+        ${state.analysisTab==='strings'?renderStringsContent():''}
+        ${state.analysisTab==='dynamic'?renderDynamicContent():''}
+        ${state.analysisTab==='memory'?renderMemoryContent():''}
+        ${state.analysisTab==='network'?renderNetworkContent():''}
+      </div>
+      <!-- 右侧：发现面板 -->
+      <div class="w-[300px] min-w-[280px] border-l border-cs-border bg-cs-bg2/30 overflow-y-auto hidden xl:block">
+        <div class="p-3 border-b border-cs-border sticky top-0 bg-cs-bg2/90 backdrop-blur-sm z-10">
+          <div class="text-[12px] font-semibold text-cs-text mb-2">Findings (${FINDINGS.length})</div>
+          <div class="flex gap-1.5 flex-wrap">
+            <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cs-red/10 text-cs-red border border-cs-red/20">${FINDINGS.filter(f=>f.severity==='HIGH').length} HIGH</span>
+            <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cs-yellow/10 text-cs-yellow border border-cs-yellow/20">${FINDINGS.filter(f=>f.severity==='MEDIUM').length} MED</span>
+            <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cs-blue/10 text-cs-blue border border-cs-blue/20">${FINDINGS.filter(f=>f.severity==='LOW').length} LOW</span>
+          </div>
+        </div>
+        <div class="p-2 space-y-1.5">
+          ${FINDINGS.map(f=>`<div class="finding-card ${state.selectedFinding===f.id?'active':''}" onclick="selectFinding('${f.id}')">
+            <div class="flex items-center justify-between mb-1">
+              ${sevBadge(f.severity)}
+              <span class="text-[10px] font-mono text-cs-text3">${f.offset}</span>
+            </div>
+            <div class="text-[11.5px] text-cs-text font-medium leading-tight mb-1">${f.title}</div>
+            <div class="text-[10.5px] font-mono text-cs-text3">API: ${f.api}</div>
+          </div>`).join('')}
+        </div>
+        <!-- 选中发现的详情 -->
+        <div class="border-t border-cs-border p-3">
+          <div class="text-[12px] font-semibold text-cs-text mb-2.5 flex items-center gap-1.5">
+            <i data-lucide="file-search" class="w-3 h-3 text-cs-cyan"></i>Evidence Detail
+          </div>
+          <div class="space-y-2.5">
+            <div>
+              <div class="text-[10px] text-cs-text3 uppercase tracking-wider mb-0.5">Finding</div>
+              <div class="text-[12px] text-cs-text">${selFinding.title}</div>
+            </div>
+            <div>
+              <div class="text-[10px] text-cs-text3 uppercase tracking-wider mb-0.5">Severity</div>
+              ${sevBadge(selFinding.severity)}
+            </div>
+            <div>
+              <div class="text-[10px] text-cs-text3 uppercase tracking-wider mb-0.5">API</div>
+              <div class="text-[11.5px] font-mono text-cs-cyan">${selFinding.api}</div>
+            </div>
+            <div>
+              <div class="text-[10px] text-cs-text3 uppercase tracking-wider mb-0.5">Location</div>
+              <div class="text-[11.5px] font-mono text-cs-text2">Offset: ${selFinding.offset}</div>
+            </div>
+            <div>
+              <div class="text-[10px] text-cs-text3 uppercase tracking-wider mb-0.5">Evidence</div>
+              <div class="text-[11.5px] text-cs-text2 leading-relaxed">${selFinding.evidence}</div>
+            </div>
+            <div>
+              <div class="text-[10px] text-cs-text3 uppercase tracking-wider mb-0.5">Explanation</div>
+              <div class="text-[11.5px] text-cs-text leading-relaxed">${selFinding.explanation}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+// 静态分析内容
+function renderStaticContent() {
+  return `<div class="space-y-4">
+    <!-- YARA 结果 -->
+    <div class="glass rounded-lg glow-border overflow-hidden">
+      <div class="px-3.5 py-2 border-b border-cs-border flex items-center gap-2">
+        <i data-lucide="scan" class="w-3.5 h-3.5 text-cs-cyan"></i>
+        <span class="text-[13px] font-semibold text-cs-text">YARA Rule Matches</span>
+        <span class="text-[10px] font-mono text-cs-text3">(${YARA_RESULTS.length} rules)</span>
+      </div>
+      <div class="divide-y divide-cs-border/40">${YARA_RESULTS.map(r=>`<div class="px-3.5 py-2.5">
+        <div class="flex items-center gap-2 mb-1">
+          ${sevBadge(r.severity)}
+          <span class="text-[12px] font-mono text-cs-text font-medium">${r.rule}</span>
+        </div>
+        <div class="text-[11px] text-cs-text2 mb-1">${r.desc}</div>
+        <div class="flex gap-1.5 flex-wrap">${r.tags.map(t=>`<span class="text-[9.5px] font-mono px-1.5 py-0.5 rounded bg-cs-card2 text-cs-text3 border border-cs-border">${t}</span>`).join('')}</div>
+      </div>`).join('')}</div>
+    </div>
+    <!-- 文件节区 -->
+    <div class="glass rounded-lg glow-border overflow-hidden">
+      <div class="px-3.5 py-2 border-b border-cs-border flex items-center gap-2">
+        <i data-lucide="layers" class="w-3.5 h-3.5 text-cs-blue"></i>
+        <span class="text-[13px] font-semibold text-cs-text">PE Sections</span>
+      </div>
+      <table class="w-full text-[11.5px]">
+        <thead><tr class="text-cs-text3 border-b border-cs-border">
+          <th class="text-left font-medium px-3.5 py-1.5">Name</th>
+          <th class="text-left font-medium px-3.5 py-1.5">Virtual Size</th>
+          <th class="text-left font-medium px-3.5 py-1.5">Raw Size</th>
+          <th class="text-left font-medium px-3.5 py-1.5">Chars</th>
+          <th class="text-left font-medium px-3.5 py-1.5">Entropy</th>
+        </tr></thead>
+        <tbody>${SAMPLE.sections.map(s=>{
+          const highEnt = parseFloat(s.entropy) > 7.0;
+          return `<tr class="border-b border-cs-border/30 ${highEnt?'bg-cs-red/5':''}">
+            <td class="px-3.5 py-1.5 font-mono ${highEnt?'text-cs-red':'text-cs-text'}">${s.name}</td>
+            <td class="px-3.5 py-1.5 font-mono text-cs-text2">${s.vsize}</td>
+            <td class="px-3.5 py-1.5 font-mono text-cs-text2">${s.rsize}</td>
+            <td class="px-3.5 py-1.5 font-mono text-cs-text2">${s.chars}</td>
+            <td class="px-3.5 py-1.5 font-mono ${highEnt?'text-cs-red font-semibold':'text-cs-text2'}">${s.entropy} ${highEnt?'<span class="text-[9px] text-cs-red ml-1">HIGH</span>':''}</td>
+          </tr>`;}).join('')}</tbody>
+      </table>
+    </div>
+    <!-- 导入表 -->
+    <div class="glass rounded-lg glow-border overflow-hidden">
+      <div class="px-3.5 py-2 border-b border-cs-border flex items-center gap-2">
+        <i data-lucide="package-import" class="w-3.5 h-3.5 text-cs-orange"></i>
+        <span class="text-[13px] font-semibold text-cs-text">Import Table</span>
+      </div>
+      <div class="p-3.5 space-y-3">${SAMPLE.imports.map(imp=>{
+        const suspicious = ['VirtualAllocEx','WriteProcessMemory','CreateRemoteThread','IsDebuggerPresent','NtQueryInformationProcess','GetAsyncKeyState','SetWindowsHookExA','WinHttpSendRequest','URLDownloadToFileW','CryptStringToBinary','RegSetValueExA','OpenProcessToken'];
+        return `<div>
+          <div class="text-[11.5px] font-mono text-cs-cyan mb-1">${imp.dll}</div>
+          <div class="flex flex-wrap gap-1">${imp.apis.map(a=>`<span class="text-[10.5px] font-mono px-1.5 py-0.5 rounded ${suspicious.includes(a)?'bg-cs-red/10 text-cs-red border border-cs-red/20':'bg-cs-card2 text-cs-text3 border border-cs-border'}">${a}${suspicious.includes(a)?' *':''}</span>`).join('')}</div>
+        </div>`;}).join('')}</div>
+    </div>
+    <!-- 文件元数据 -->
+    <div class="glass rounded-lg glow-border overflow-hidden">
+      <div class="px-3.5 py-2 border-b border-cs-border flex items-center gap-2">
+        <i data-lucide="info" class="w-3.5 h-3.5 text-cs-text3"></i>
+        <span class="text-[13px] font-semibold text-cs-text">File Metadata</span>
+      </div>
+      <div class="p-3.5">
+        <div class="data-row"><span class="data-label">File Name</span><span class="data-value">${SAMPLE.name}</span></div>
+        <div class="data-row"><span class="data-label">SHA256</span><span class="data-value">${SAMPLE.sha256}</span></div>
+        <div class="data-row"><span class="data-label">MD5</span><span class="data-value">${SAMPLE.md5}</span></div>
+        <div class="data-row"><span class="data-label">File Size</span><span class="data-value">${SAMPLE.size} bytes</span></div>
+        <div class="data-row"><span class="data-label">File Type</span><span class="data-value">${SAMPLE.type}</span></div>
+        <div class="data-row"><span class="data-label">Architecture</span><span class="data-value">${SAMPLE.arch}</span></div>
+        <div class="data-row"><span class="data-label">Compiler</span><span class="data-value">${SAMPLE.compiler}</span></div>
+        <div class="data-row"><span class="data-label">Created</span><span class="data-value">${SAMPLE.created}</span></div>
+        <div class="data-row"><span class="data-label">Modified</span><span class="data-value">${SAMPLE.modified}</span></div>
+        <div class="data-row"><span class="data-label">Signature</span><span class="data-value text-cs-red">${SAMPLE.signature}</span></div>
+        <div class="data-row"><span class="data-label">Entropy</span><span class="data-value ${SAMPLE.entropyStatus==='HIGH'?'text-cs-red':''}">${SAMPLE.entropy} ${SAMPLE.entropyStatus==='HIGH'?'(HIGH — likely packed/encrypted)':''}</span></div>
+        <div class="data-row"><span class="data-label">Exports</span><span class="data-value">${SAMPLE.exports.map(e=>e.name).join(', ')}</span></div>
+        <div class="data-row"><span class="data-label">Embedded</span><span class="data-value">${SAMPLE.embedded.join(', ')}</span></div>
+      </div>
+    </div>
+  </div>`;
+}
+
+// 代码分析内容
+function renderCodeContent() {
+  const selFinding = FINDINGS.find(f=>f.id===state.selectedFinding) || FINDINGS[0];
+  return `<div class="space-y-0">
+    <div class="flex items-center gap-3 mb-3">
+      <div class="flex items-center gap-2">
+        <i data-lucide="binary" class="w-3.5 h-3.5 text-cs-cyan"></i>
+        <span class="text-[13px] font-semibold text-cs-text">Disassembly — .text section</span>
+      </div>
+      <div class="flex items-center gap-2 text-[10px] font-mono">
+        <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-sm bg-cs-red/30 border border-cs-red/40"></span>Suspicious</span>
+        <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-sm bg-cs-cyan/20 border border-cs-cyan/30"></span>Selected</span>
+      </div>
+    </div>
+    <div class="glass rounded-lg glow-border overflow-hidden">
+      <div class="overflow-x-auto">
+        <div class="min-w-[600px] p-2">${CODE_LINES.map((l,i)=>`<div class="code-line ${l.suspicious?'suspicious':''} ${state.selectedCodeLine===i?'selected':''}" onclick="selectCodeLine(${i})">
+          <span class="ln">${l.ln}</span>
+          <span class="addr">${l.addr}</span>
+          <span class="instr">${l.code}</span>
+        </div>`).join('')}</div>
+      </div>
+    </div>
+    <!-- 代码下方的解释面板 -->
+    <div class="mt-3 glass rounded-lg glow-border p-3.5">
+      <div class="flex items-center gap-2 mb-2">
+        <i data-lucide="alert-circle" class="w-3.5 h-3.5 ${selFinding.severity==='HIGH'?'text-cs-red':'text-cs-yellow'}"></i>
+        <span class="text-[12px] font-semibold text-cs-text">${selFinding.title}</span>
+        ${sevBadge(selFinding.severity)}
+        <span class="text-[10px] font-mono text-cs-text3 ml-auto">Offset: ${selFinding.offset}</span>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div>
+          <div class="text-[10px] text-cs-text3 uppercase tracking-wider mb-1">Evidence</div>
+          <div class="text-[11.5px] text-cs-text2 leading-relaxed font-mono">${selFinding.evidence}</div>
+        </div>
+        <div>
+          <div class="text-[10px] text-cs-text3 uppercase tracking-wider mb-1">Explanation</div>
+          <div class="text-[11.5px] text-cs-text leading-relaxed">${selFinding.explanation}</div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+// 字符串内容
+function renderStringsContent() {
+  const strings = [
+    {type:'URL', value:'hxxp://185.234.xx.xx:443/gate.php', sev:'HIGH'},
+    {type:'URL', value:'hxxp://91.215.85.44:8080/backup', sev:'HIGH'},
+    {type:'Path', value:'C:\\Users\\Public\\svchost_up.exe', sev:'HIGH'},
+    {type:'Registry', value:'SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run', sev:'MEDIUM'},
+    {type:'Registry', value:'SOFTWARE\\Emotet\\Config', sev:'MEDIUM'},
+    {type:'API', value:'VirtualAllocEx', sev:'HIGH'},
+    {type:'API', value:'WriteProcessMemory', sev:'HIGH'},
+    {type:'API', value:'CreateRemoteThread', sev:'HIGH'},
+    {type:'API', value:'IsDebuggerPresent', sev:'MEDIUM'},
+    {type:'API', value:'NtQueryInformationProcess', sev:'MEDIUM'},
+    {type:'API', value:'GetAsyncKeyState', sev:'MEDIUM'},
+    {type:'API', value:'URLDownloadToFile', sev:'MEDIUM'},
+    {type:'API', value:'CryptStringToBinary', sev:'LOW'},
+    {type:'Mutex', value:'Global\\EmotetMutex_{A3F2B8C1}', sev:'MEDIUM'},
+    {type:'Format', value:'WinHTTP/1.1', sev:'LOW'},
+    {type:'Format', value:'POST /gate.php HTTP/1.1', sev:'HIGH'},
+    {type:'Encoded', value:'aHR0cDovLzE4NS4yMzQuNzIuMTEvZ2F0ZS5waHA= (Base64)', sev:'HIGH'},
+    {type:'User-Agent', value:'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', sev:'LOW'},
+  ];
+  return `<div class="space-y-3">
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <i data-lucide="text" class="w-3.5 h-3.5 text-cs-yellow"></i>
+        <span class="text-[13px] font-semibold text-cs-text">Extracted Strings</span>
+        <span class="text-[10px] font-mono text-cs-text3">(${strings.length} notable)</span>
+      </div>
+      <div class="flex gap-1.5">
+        <button class="tab-btn active text-[10px]">All</button>
+        <button class="tab-btn text-[10px]">URLs</button>
+        <button class="tab-btn text-[10px]">APIs</button>
+        <button class="tab-btn text-[10px]">Paths</button>
+      </div>
+    </div>
+    <div class="glass rounded-lg glow-border overflow-hidden">
+      <table class="w-full text-[11.5px]">
+        <thead><tr class="text-cs-text3 border-b border-cs-border">
+          <th class="text-left font-medium px-3.5 py-1.5 w-20">Type</th>
+          <th class="text-left font-medium px-3.5 py-1.5">Value</th>
+          <th class="text-left font-medium px-3.5 py-1.5 w-16">Severity</th>
+        </tr></thead>
+        <tbody>${strings.map(s=>`<tr class="border-b border-cs-border/30 hover:bg-cs-card/30">
+          <td class="px-3.5 py-1.5 font-mono text-cs-text3">${s.type}</td>
+          <td class="px-3.5 py-1.5 font-mono ${s.sev==='HIGH'?'text-cs-red':s.sev==='MEDIUM'?'text-cs-yellow':'text-cs-text2'}">${s.value}</td>
+          <td class="px-3.5 py-1.5">${sevBadge(s.sev)}</td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+// 动态分析内容
+function renderDynamicContent() {
+  return `<div class="space-y-4">
+    <div class="flex items-center gap-2">
+      <i data-lucide="activity" class="w-3.5 h-3.5 text-cs-orange"></i>
+      <span class="text-[13px] font-semibold text-cs-text">Behavior Timeline</span>
+      <span class="text-[10px] font-mono text-cs-text3">(${TIMELINE.length} events)</span>
+    </div>
+    <!-- 进程树 -->
+    <div class="glass rounded-lg glow-border p-3.5">
+      <div class="text-[12px] font-semibold text-cs-text mb-2.5">Process Tree</div>
+      <div class="space-y-1 font-mono text-[11.5px]">
+        <div class="flex items-center gap-1"><i data-lucide="chevron-down" class="w-3 h-3 text-cs-text3"></i><span class="process-tree-node normal">explorer.exe (PID 2048)</span></div>
+        <div class="flex items-center gap-1 ml-5"><i data-lucide="corner-down-right" class="w-3 h-3 text-cs-text3"></i><span class="process-tree-node malicious">Emotet_Dropper_x64.dll (PID 4892)</span></div>
+        <div class="flex items-center gap-1 ml-10"><i data-lucide="corner-down-right" class="w-3 h-3 text-cs-text3"></i><span class="process-tree-node injected">svchost.exe (PID 1024) [INJECTED]</span></div>
+        <div class="flex items-center gap-1 ml-5"><i data-lucide="corner-down-right" class="w-3 h-3 text-cs-text3"></i><span class="process-tree-node malicious">svchost_up.exe (PID 5104)</span></div>
+      </div>
+    </div>
+    <!-- 时间线 -->
+    <div class="glass rounded-lg glow-border p-3.5">
+      <div class="space-y-0">${TIMELINE.map((t,i)=>`<div class="timeline-item">
+        <span class="timeline-time">${t.time}</span>
+        <div class="timeline-dot event-${t.type}">${i<TIMELINE.length-1?'<div class="timeline-line"></div>':''}</div>
+        <span class="text-cs-text2 leading-snug ${t.type==='red'?'text-cs-red/90':t.type==='orange'?'text-cs-orange/90':''}">${t.text}</span>
+      </div>`).join('')}</div>
+    </div>
+  </div>`;
+}
+
+// 内存分析内容
+function renderMemoryContent() {
+  return `<div class="space-y-4">
+    <div class="flex items-center gap-2">
+      <i data-lucide="cpu" class="w-3.5 h-3.5 text-cs-purple"></i>
+      <span class="text-[13px] font-semibold text-cs-text">Memory Forensics</span>
+    </div>
+    <!-- 进程 -->
+    <div class="glass rounded-lg glow-border overflow-hidden">
+      <div class="px-3.5 py-2 border-b border-cs-border text-[12px] font-semibold text-cs-text">Active Processes</div>
+      <div class="overflow-x-auto"><table class="w-full text-[11px]">
+        <thead><tr class="text-cs-text3 border-b border-cs-border">
+          <th class="text-left font-medium px-3 py-1.5">PID</th><th class="text-left font-medium px-3 py-1.5">Name</th>
+          <th class="text-left font-medium px-3 py-1.5 hidden lg:table-cell">Path</th><th class="text-left font-medium px-3 py-1.5">Status</th>
+          <th class="text-left font-medium px-3 py-1.5 hidden md:table-cell">Memory</th><th class="text-left font-medium px-3 py-1.5 hidden md:table-cell">Threads</th>
+        </tr></thead>
+        <tbody>${PROCESSES.map(p=>`<tr class="border-b border-cs-border/30 ${p.suspicious?'bg-cs-red/5':''}">
+          <td class="px-3 py-1.5 font-mono text-cs-text3">${p.pid}</td>
+          <td class="px-3 py-1.5 font-mono ${p.suspicious?'text-cs-red':'text-cs-text'}">${p.name}</td>
+          <td class="px-3 py-1.5 font-mono text-cs-text3 hidden lg:table-cell truncate max-w-[200px]">${p.path}</td>
+          <td class="px-3 py-1.5">${statusBadge(p.status)}</td>
+          <td class="px-3 py-1.5 font-mono text-cs-text2 hidden md:table-cell">${p.mem}</td>
+          <td class="px-3 py-1.5 font-mono text-cs-text2 hidden md:table-cell">${p.threads}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+    </div>
+    <!-- 内存区域 -->
+    <div class="glass rounded-lg glow-border overflow-hidden">
+      <div class="px-3.5 py-2 border-b border-cs-border text-[12px] font-semibold text-cs-text">Memory Regions</div>
+      <div class="overflow-x-auto"><table class="w-full text-[11px]">
+        <thead><tr class="text-cs-text3 border-b border-cs-border">
+          <th class="text-left font-medium px-3 py-1.5">Base Address</th><th class="text-left font-medium px-3 py-1.5">Size</th>
+          <th class="text-left font-medium px-3 py-1.5">Protection</th><th class="text-left font-medium px-3 py-1.5 hidden md:table-cell">Type</th>
+          <th class="text-left font-medium px-3 py-1.5 hidden lg:table-cell">Owner</th><th class="text-left font-medium px-3 py-1.5">Entropy</th>
+        </tr></thead>
+        <tbody>${MEMORY_REGIONS.map(m=>`<tr class="border-b border-cs-border/30 ${m.suspicious?'bg-cs-red/5':''}">
+          <td class="px-3 py-1.5 font-mono ${m.suspicious?'text-cs-red':'text-cs-text2'}">${m.base}</td>
+          <td class="px-3 py-1.5 font-mono text-cs-text3">${m.size}</td>
+          <td class="px-3 py-1.5 font-mono ${m.prot==='RWX'?'text-cs-red font-semibold':'text-cs-text2'}">${m.prot}</td>
+          <td class="px-3 py-1.5 font-mono text-cs-text3 hidden md:table-cell">${m.type}</td>
+          <td class="px-3 py-1.5 font-mono text-cs-text3 hidden lg:table-cell">${m.owner}</td>
+          <td class="px-3 py-1.5 font-mono ${m.suspicious?'text-cs-red':'text-cs-text2'}">${m.entropy}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+    </div>
+    ${MEMORY_REGIONS.filter(m=>m.suspicious).map(m=>`<div class="glass rounded-lg glow-red border-cs-red/20 p-3.5">
+      <div class="flex items-center gap-2 mb-1.5">
+        <i data-lucide="alert-triangle" class="w-3.5 h-3.5 text-cs-red"></i>
+        <span class="text-[12px] font-semibold text-cs-red">Suspicious Memory: ${m.base}</span>
+      </div>
+      <div class="text-[11px] text-cs-text2">${m.note}</div>
+      <div class="text-[10.5px] font-mono text-cs-text3 mt-1">Owner: ${m.owner} | Protection: ${m.prot} | Entropy: ${m.entropy}</div>
+    </div>`).join('')}
+  </div>`;
+}
+
+// 网络分析内容
+function renderNetworkContent() {
+  return `<div class="space-y-4">
+    <div class="flex items-center gap-2">
+      <i data-lucide="globe" class="w-3.5 h-3.5 text-cs-green"></i>
+      <span class="text-[13px] font-semibold text-cs-text">Network Analysis</span>
+    </div>
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+      <div class="glass rounded-lg glow-border p-3.5">
+        <div class="text-[12px] font-semibold text-cs-text mb-2">Protocol Distribution</div>
+        <div class="h-[160px]"><canvas id="chart-proto"></canvas></div>
+      </div>
+      <div class="glass rounded-lg glow-border p-3.5">
+        <div class="text-[12px] font-semibold text-cs-text mb-2">Data Transfer Timeline</div>
+        <div class="h-[160px]"><canvas id="chart-net-timeline"></canvas></div>
+      </div>
+    </div>
+    <div class="glass rounded-lg glow-border overflow-hidden">
+      <div class="px-3.5 py-2 border-b border-cs-border text-[12px] font-semibold text-cs-text">DNS Queries</div>
+      <div class="overflow-x-auto"><table class="w-full text-[11px]">
+        <thead><tr class="text-cs-text3 border-b border-cs-border">
+          <th class="text-left font-medium px-3 py-1.5">Domain</th><th class="text-left font-medium px-3 py-1.5">IP Address</th>
+          <th class="text-left font-medium px-3 py-1.5">Type</th><th class="text-left font-medium px-3 py-1.5 hidden md:table-cell">Time</th>
+          <th class="text-left font-medium px-3 py-1.5">Threat</th><th class="text-left font-medium px-3 py-1.5 hidden sm:table-cell">Confidence</th>
+        </tr></thead>
+        <tbody>${DNS_QUERIES.map(d=>`<tr class="border-b border-cs-border/30 ${d.threat==='Malicious'?'bg-cs-red/5':''}">
+          <td class="px-3 py-1.5 font-mono ${d.threat==='Malicious'?'text-cs-red':'text-cs-text2'}">${d.domain}</td>
+          <td class="px-3 py-1.5 font-mono text-cs-text3">${d.ip}</td>
+          <td class="px-3 py-1.5 font-mono text-cs-text3">${d.type}</td>
+          <td class="px-3 py-1.5 font-mono text-cs-text3 hidden md:table-cell">${d.time}</td>
+          <td class="px-3 py-1.5">${riskBadge(d.threat)}</td>
+          <td class="px-3 py-1.5 font-mono text-cs-text3 hidden sm:table-cell">${d.confidence}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+    </div>
+    <div class="glass rounded-lg glow-border overflow-hidden">
+      <div class="px-3.5 py-2 border-b border-cs-border text-[12px] font-semibold text-cs-text">Connections</div>
+      <div class="overflow-x-auto"><table class="w-full text-[11px]">
+        <thead><tr class="text-cs-text3 border-b border-cs-border">
+          <th class="text-left font-medium px-3 py-1.5">Source</th><th class="text-left font-medium px-3 py-1.5">Destination</th>
+          <th class="text-left font-medium px-3 py-1.5">Protocol</th><th class="text-left font-medium px-3 py-1.5 hidden md:table-cell">State</th>
+          <th class="text-left font-medium px-3 py-1.5 hidden lg:table-cell">Sent</th>
+          <th class="text-left font-medium px-3 py-1.5 hidden lg:table-cell">Recv</th>
+          <th class="text-left font-medium px-3 py-1.5">Threat</th>
+        </tr></thead>
+        <tbody>${CONNECTIONS.map(c=>`<tr class="border-b border-cs-border/30 ${c.threat==='Malicious'?'bg-cs-red/5':''}">
+          <td class="px-3 py-1.5 font-mono text-cs-text3">${c.src}</td>
+          <td class="px-3 py-1.5 font-mono ${c.threat==='Malicious'?'text-cs-red':'text-cs-text2'}">${c.dst}</td>
+          <td class="px-3 py-1.5 font-mono text-cs-text3">${c.proto}</td>
+          <td class="px-3 py-1.5 hidden md:table-cell">${statusBadge(c.state)}</td>
+          <td class="px-3 py-1.5 font-mono text-cs-text3 hidden lg:table-cell">${c.bytes_sent}</td>
+          <td class="px-3 py-1.5 font-mono text-cs-text3 hidden lg:table-cell">${c.bytes_recv}</td>
+          <td class="px-3 py-1.5">${riskBadge(c.threat)}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+    </div>
+  </div>`;
+}
+
+// ============================================================
+// 独立页面
+// ============================================================
+function renderUploadPage() {
+  return `<div class="p-4 max-w-3xl mx-auto space-y-4">
+    <div class="flex items-center gap-2 mb-2">
+      <i data-lucide="upload" class="w-4 h-4 text-cs-cyan"></i>
+      <span class="text-[16px] font-display font-semibold text-cs-text">Upload Sample</span>
+    </div>
+    <div class="glass rounded-lg glow-border p-8 border-2 border-dashed border-cs-border hover:border-cs-cyan/30 transition-colors cursor-pointer" id="drop-zone">
+      <div class="text-center">
+        <i data-lucide="file-up" class="w-10 h-10 text-cs-text3 mx-auto mb-3"></i>
+        <div class="text-[14px] text-cs-text mb-1">Drop file here or click to browse</div>
+        <div class="text-[11.5px] text-cs-text3">Supports PE, ELF, Mach-O, Office documents, PDF, scripts, PowerShell — Max 128 MB</div>
+      </div>
+    </div>
+    <div class="glass rounded-lg glow-border p-4 space-y-3">
+      <div class="text-[13px] font-semibold text-cs-text">Analysis Options</div>
+      <label class="flex items-center gap-2.5 text-[12px] text-cs-text2 cursor-pointer">
+        <input type="checkbox" checked class="accent-cs-cyan w-3.5 h-3.5"> Run static analysis (YARA, strings, imports, entropy)
+      </label>
+      <label class="flex items-center gap-2.5 text-[12px] text-cs-text2 cursor-pointer">
+        <input type="checkbox" checked class="accent-cs-cyan w-3.5 h-3.5"> Execute in sandbox (dynamic analysis)
+      </label>
+      <label class="flex items-center gap-2.5 text-[12px] text-cs-text2 cursor-pointer">
+        <input type="checkbox" class="accent-cs-cyan w-3.5 h-3.5"> Capture network traffic (PCAP)
+      </label>
+      <label class="flex items-center gap-2.5 text-[12px] text-cs-text2 cursor-pointer">
+        <input type="checkbox" class="accent-cs-cyan w-3.5 h-3.5"> Memory dump after execution
+      </label>
+      <div class="grid grid-cols-2 gap-3 pt-2">
+        <div>
+          <label class="text-[11px] text-cs-text3 block mb-1">Sandbox OS</label>
+          <select class="w-full bg-cs-card border border-cs-border rounded px-2.5 py-1.5 text-[12px] text-cs-text focus:outline-none focus:border-cs-cyan/40">
+            <option>Windows 10 x64</option><option>Windows 7 x86</option><option>Ubuntu 22.04</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-[11px] text-cs-text3 block mb-1">Timeout</label>
+          <select class="w-full bg-cs-card border border-cs-border rounded px-2.5 py-1.5 text-[12px] text-cs-text focus:outline-none focus:border-cs-cyan/40">
+            <option>60 seconds</option><option>120 seconds</option><option>300 seconds</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <button class="w-full py-2.5 rounded-lg bg-cs-cyan/10 border border-cs-cyan/20 text-cs-cyan text-[13px] font-semibold hover:bg-cs-cyan/15 transition-colors">
+      Submit for Analysis
+    </button>
+  </div>`;
+}
+
+function renderHistoryPage() {
+  return `<div class="p-4 space-y-3">
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <i data-lucide="clock" class="w-4 h-4 text-cs-cyan"></i>
+        <span class="text-[16px] font-display font-semibold text-cs-text">Sample History</span>
+        <span class="text-[11px] font-mono text-cs-text3">2,847 total</span>
+      </div>
+      <div class="flex gap-2">
+        <input type="text" placeholder="Search by name, hash..." class="bg-cs-card border border-cs-border rounded px-3 py-1.5 text-[12px] text-cs-text w-56 focus:outline-none focus:border-cs-cyan/40 placeholder:text-cs-text3">
+        <select class="bg-cs-card border border-cs-border rounded px-2.5 py-1.5 text-[12px] text-cs-text focus:outline-none">
+          <option>All Risk Levels</option><option>CRITICAL</option><option>HIGH</option><option>MEDIUM</option><option>LOW</option>
+        </select>
+      </div>
+    </div>
+    <div class="glass rounded-lg glow-border overflow-hidden">
+      <table class="w-full text-[12px]">
+        <thead><tr class="text-cs-text3 border-b border-cs-border">
+          <th class="text-left font-medium px-3.5 py-2">File Name</th><th class="text-left font-medium px-3.5 py-2 hidden md:table-cell">SHA256</th>
+          <th class="text-left font-medium px-3.5 py-2 hidden lg:table-cell">Type</th><th class="text-left font-medium px-3.5 py-2">Risk</th>
+          <th class="text-left font-medium px-3.5 py-2">Status</th><th class="text-left font-medium px-3.5 py-2">Date</th>
+        </tr></thead>
+        <tbody>${RECENT_SAMPLES.map(s=>`<tr class="border-b border-cs-border/40 hover:bg-cs-card/50 cursor-pointer" onclick="navigate('sample')">
+          <td class="px-3.5 py-2 font-mono text-cs-text">${s.name}</td>
+          <td class="px-3.5 py-2 font-mono text-cs-text3 hidden md:table-cell">${s.hash}</td>
+          <td class="px-3.5 py-2 text-cs-text2 hidden lg:table-cell">${s.type}</td>
+          <td class="px-3.5 py-2">${riskBadge(s.risk)}</td>
+          <td class="px-3.5 py-2">${statusBadge(s.status)}</td>
+          <td class="px-3.5 py-2 font-mono text-cs-text3">${s.date}</td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+function renderIntelligencePage() {
+  return `<div class="p-4 max-w-3xl mx-auto space-y-4">
+    <div class="flex items-center gap-2">
+      <i data-lucide="search" class="w-4 h-4 text-cs-cyan"></i>
+      <span class="text-[16px] font-display font-semibold text-cs-text">File Intelligence Lookup</span>
+    </div>
+    <div class="flex gap-2">
+      <input type="text" placeholder="Enter SHA256, MD5, domain, or IP address..." class="flex-1 bg-cs-card border border-cs-border rounded-lg px-3.5 py-2.5 text-[13px] text-cs-text focus:outline-none focus:border-cs-cyan/40 placeholder:text-cs-text3 font-mono" value="a3f2b8c1d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1">
+      <button class="px-4 py-2.5 rounded-lg bg-cs-cyan/10 border border-cs-cyan/20 text-cs-cyan text-[12px] font-semibold hover:bg-cs-cyan/15 transition-colors">Lookup</button>
+    </div>
+    <div class="glass rounded-lg glow-border overflow-hidden">
+      <div class="px-3.5 py-2 border-b border-cs-border flex items-center gap-2">
+        <i data-lucide="shield-alert" class="w-3.5 h-3.5 text-cs-red"></i>
+        <span class="text-[12px] font-semibold text-cs-text">Intelligence Report</span>
+      </div>
+      <div class="p-3.5 space-y-3">
+        <div class="grid grid-cols-3 gap-3">
+          <div class="text-center p-3 rounded bg-cs-red/5 border border-cs-red/15">
+            <div class="text-[18px] font-display font-bold text-cs-red">34/42</div>
+            <div class="text-[10px] text-cs-text3">Vendor Detections</div>
+          </div>
+          <div class="text-center p-3 rounded bg-cs-orange/5 border border-cs-orange/15">
+            <div class="text-[18px] font-display font-bold text-cs-orange">First Seen</div>
+            <div class="text-[10px] text-cs-text3">2024-11-28</div>
+          </div>
+          <div class="text-center p-3 rounded bg-cs-yellow/5 border border-cs-yellow/15">
+            <div class="text-[18px] font-display font-bold text-cs-yellow">142</div>
+            <div class="text-[10px] text-cs-text3">Related IOCs</div>
+          </div>
+        </div>
+        <div class="data-row"><span class="data-label">Detection Name</span><span class="data-value">Emotet.Dropper.Generic / Trojan.Win64.Emotet</span></div>
+        <div class="data-row"><span class="data-label">Family</span><span class="data-value text-cs-red">Emotet</span></div>
+        <div class="data-row"><span class="data-label">Tags</span><span class="data-value">trojan, dropper, banking, downloader, email</span></div>
+        <div class="data-row"><span class="data-label">Delivery Method</span><span class="data-value">Malicious email attachment (macro-enabled document)</span></div>
+        <div class="data-row"><span class="data-label">C2 Infrastructure</span><span class="data-value">3 domains, 2 IP addresses identified</span></div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderStaticPage() {
+  state.analysisTab = 'static'; state.page = 'sample';
+  return renderSamplePage();
+}
+function renderDynamicPage() {
+  state.analysisTab = 'dynamic'; state.page = 'sample';
+  return renderSamplePage();
+}
+function renderMemoryPage() {
+  state.analysisTab = 'memory'; state.page = 'sample';
+  return renderSamplePage();
+}
+function renderNetworkPage() {
+  state.analysisTab = 'network'; state.page = 'sample';
+  return renderSamplePage();
+}
+
+function renderIOCPage() {
+  return `<div class="p-4 space-y-3">
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <i data-lucide="database" class="w-4 h-4 text-cs-cyan"></i>
+        <span class="text-[16px] font-display font-semibold text-cs-text">IOC Database</span>
+        <span class="text-[11px] font-mono text-cs-text3">${IOCS.length} indicators for this sample</span>
+      </div>
+      <div class="flex gap-2">
+        <input type="text" placeholder="Search IOCs..." class="bg-cs-card border border-cs-border rounded px-3 py-1.5 text-[12px] text-cs-text w-48 focus:outline-none focus:border-cs-cyan/40 placeholder:text-cs-text3">
+        <button class="px-3 py-1.5 rounded bg-cs-card border border-cs-border text-[11px] text-cs-text2 hover:text-cs-cyan hover:border-cs-cyan/30 transition-colors flex items-center gap-1">
+          <i data-lucide="download" class="w-3 h-3"></i>Export
+        </button>
+      </div>
+    </div>
+    <div class="glass rounded-lg glow-border overflow-hidden">
+      <table class="w-full text-[11.5px]">
+        <thead><tr class="text-cs-text3 border-b border-cs-border">
+          <th class="text-left font-medium px-3.5 py-2 w-20">Type</th><th class="text-left font-medium px-3.5 py-2">Value</th>
+          <th class="text-left font-medium px-3.5 py-2 hidden lg:table-cell">Context</th><th class="text-left font-medium px-3.5 py-2">Severity</th>
+        </tr></thead>
+        <tbody>${IOCS.map(i=>`<tr class="border-b border-cs-border/30 hover:bg-cs-card/30">
+          <td class="px-3.5 py-2 font-mono text-cs-cyan text-[11px]">${i.type}</td>
+          <td class="px-3.5 py-2 font-mono text-cs-text ${i.severity==='CRITICAL'?'text-cs-red':i.severity==='HIGH'?'text-cs-orange':'text-cs-text2'}" style="max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${i.value}</td>
+          <td class="px-3.5 py-2 text-cs-text3 hidden lg:table-cell">${i.context}</td>
+          <td class="px-3.5 py-2">${riskBadge(i.severity)}</td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+function renderReportPage() {
+  return `<div class="p-4 max-w-4xl mx-auto space-y-4">
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <i data-lucide="file-text" class="w-4 h-4 text-cs-cyan"></i>
+        <span class="text-[16px] font-display font-semibold text-cs-text">Forensic Analysis Report</span>
+      </div>
+      <div class="flex gap-2">
+        <button class="px-3 py-1.5 rounded bg-cs-card border border-cs-border text-[11px] text-cs-text2 hover:text-cs-cyan hover:border-cs-cyan/30 transition-colors flex items-center gap-1">
+          <i data-lucide="file-down" class="w-3 h-3"></i>PDF
+        </button>
+        <button class="px-3 py-1.5 rounded bg-cs-card border border-cs-border text-[11px] text-cs-text2 hover:text-cs-cyan hover:border-cs-cyan/30 transition-colors flex items-center gap-1">
+          <i data-lucide="braces" class="w-3 h-3"></i>JSON
+        </button>
+        <button class="px-3 py-1.5 rounded bg-cs-card border border-cs-border text-[11px] text-cs-text2 hover:text-cs-cyan hover:border-cs-cyan/30 transition-colors flex items-center gap-1">
+          <i data-lucide="code" class="w-3 h-3"></i>HTML
+        </button>
+        <button class="px-3 py-1.5 rounded bg-cs-card border border-cs-border text-[11px] text-cs-text2 hover:text-cs-cyan hover:border-cs-cyan/30 transition-colors flex items-center gap-1">
+          <i data-lucide="file-spreadsheet" class="w-3 h-3"></i>STIX
+        </button>
+      </div>
+    </div>
+    <!-- 执行摘要 -->
+    <div class="glass rounded-lg glow-border p-4">
+      <div class="text-[13px] font-semibold text-cs-text mb-2 flex items-center gap-2">
+        <i data-lucide="file-search" class="w-3.5 h-3.5 text-cs-cyan"></i>Executive Summary
+      </div>
+      <p class="text-[12.5px] text-cs-text2 leading-relaxed">The submitted sample <span class="font-mono text-cs-text">Emotet_Dropper_x64.dll</span> has been classified as a <span class="text-cs-red font-semibold">CRITICAL</span> threat belonging to the Emotet malware family. Static and dynamic analysis confirm this is a dropper module that deploys a secondary payload via process injection, establishes C2 communication with known Emotet infrastructure, and implements keylogging and persistence mechanisms. The sample exhibits anti-analysis techniques including debugger detection and payload compression. <span class="text-cs-red font-semibold">8 YARA rules matched, 7 high-severity findings identified.</span></p>
+    </div>
+    <!-- 技术发现 -->
+    <div class="glass rounded-lg glow-border p-4">
+      <div class="text-[13px] font-semibold text-cs-text mb-3 flex items-center gap-2">
+        <i data-lucide="list" class="w-3.5 h-3.5 text-cs-orange"></i>Technical Findings
+      </div>
+      <div class="space-y-3">${FINDINGS.map(f=>`<div class="p-3 rounded-lg border border-cs-border/60 bg-cs-card/30">
+        <div class="flex items-center gap-2 mb-1.5">
+          ${sevBadge(f.severity)}
+          <span class="text-[12px] font-semibold text-cs-text">${f.title}</span>
+          <span class="text-[10px] font-mono text-cs-text3 ml-auto">${f.offset}</span>
+        </div>
+        <div class="text-[11.5px] text-cs-text2 leading-relaxed">${f.explanation}</div>
+        <div class="text-[10.5px] font-mono text-cs-text3 mt-1.5">Evidence: ${f.evidence}</div>
+      </div>`).join('')}</div>
+    </div>
+    <!-- IOC 列表 -->
+    <div class="glass rounded-lg glow-border p-4">
+      <div class="text-[13px] font-semibold text-cs-text mb-3 flex items-center gap-2">
+        <i data-lucide="database" class="w-3.5 h-3.5 text-cs-red"></i>Indicators of Compromise
+      </div>
+      <div class="space-y-1.5">${IOCS.map(i=>`<div class="flex items-center gap-3 text-[11px] py-1 border-b border-cs-border/30 last:border-0">
+        <span class="font-mono text-cs-cyan w-16 flex-shrink-0">${i.type}</span>
+        <span class="font-mono text-cs-text flex-1 truncate">${i.value}</span>
+        ${riskBadge(i.severity)}
+      </div>`).join('')}</div>
+    </div>
+    <!-- 行为时间线 -->
+    <div class="glass rounded-lg glow-border p-4">
+      <div class="text-[13px] font-semibold text-cs-text mb-3 flex items-center gap-2">
+        <i data-lucide="git-branch" class="w-3.5 h-3.5 text-cs-green"></i>Behavior Timeline
+      </div>
+      <div class="space-y-0">${TIMELINE.map((t,i)=>`<div class="timeline-item">
+        <span class="timeline-time">${t.time}</span>
+        <div class="timeline-dot event-${t.type}">${i<TIMELINE.length-1?'<div class="timeline-line"></div>':''}</div>
+        <span class="text-cs-text2 text-[11.5px] leading-snug ${t.type==='red'?'text-cs-red/90':t.type==='orange'?'text-cs-orange/90':''}">${t.text}</span>
+      </div>`).join('')}</div>
+    </div>
+    <!-- 风险评估 -->
+    <div class="glass rounded-lg glow-red border-cs-red/15 p-4">
+      <div class="text-[13px] font-semibold text-cs-red mb-2 flex items-center gap-2">
+        <i data-lucide="alert-triangle" class="w-3.5 h-3.5"></i>Risk Assessment
+      </div>
+      <p class="text-[12.5px] text-cs-text2 leading-relaxed">This sample poses a <span class="text-cs-red font-semibold">severe and immediate threat</span>. It combines multiple techniques from the MITRE ATT&CK framework including Process Injection (T1055), Registry Run Keys (T1547.001), Input Capture (T1056.001), and Encrypted C2 (T1071.001). The Emotet family is associated with significant financial loss and is frequently used as a downloader for ransomware. <span class="text-cs-text font-semibold">Immediate containment and incident response procedures are recommended.</span></p>
+    </div>
+  </div>`;
+}
+
+function renderSettingsPage() {
+  return `<div class="p-4 max-w-2xl mx-auto space-y-4">
+    <div class="flex items-center gap-2">
+      <i data-lucide="settings" class="w-4 h-4 text-cs-cyan"></i>
+      <span class="text-[16px] font-display font-semibold text-cs-text">Settings</span>
+    </div>
+    <div class="glass rounded-lg glow-border p-4 space-y-4">
+      <div class="text-[13px] font-semibold text-cs-text">Analysis Configuration</div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="text-[11px] text-cs-text3 block mb-1">Default Sandbox Timeout</label>
+          <input type="number" value="120" class="w-full bg-cs-card border border-cs-border rounded px-2.5 py-1.5 text-[12px] text-cs-text focus:outline-none focus:border-cs-cyan/40 font-mono">
+        </div>
+        <div><label class="text-[11px] text-cs-text3 block mb-1">Max File Size (MB)</label>
+          <input type="number" value="128" class="w-full bg-cs-card border border-cs-border rounded px-2.5 py-1.5 text-[12px] text-cs-text focus:outline-none focus:border-cs-cyan/40 font-mono">
+        </div>
+        <div><label class="text-[11px] text-cs-text3 block mb-1">YARA Ruleset</label>
+          <select class="w-full bg-cs-card border border-cs-border rounded px-2.5 py-1.5 text-[12px] text-cs-text focus:outline-none">
+            <option>Full (12,847 rules)</option><option>Standard (4,210 rules)</option><option>Minimal (890 rules)</option>
+          </select>
+        </div>
+        <div><label class="text-[11px] text-cs-text3 block mb-1">Threat Intel Feeds</label>
+          <select class="w-full bg-cs-card border border-cs-border rounded px-2.5 py-1.5 text-[12px] text-cs-text focus:outline-none">
+            <option>All Enabled (6 feeds)</option><option>Internal Only</option><option>Custom</option>
+          </select>
+        </div>
+      </div>
+      <div class="space-y-2 pt-2">
+        <label class="flex items-center gap-2.5 text-[12px] text-cs-text2 cursor-pointer"><input type="checkbox" checked class="accent-cs-cyan w-3.5 h-3.5"> Auto-submit to VT for correlation</label>
+        <label class="flex items-center gap-2.5 text-[12px] text-cs-text2 cursor-pointer"><input type="checkbox" checked class="accent-cs-cyan w-3.5 h-3.5"> Enable MITRE ATT&CK mapping</label>
+        <label class="flex items-center gap-2.5 text-[12px] text-cs-text2 cursor-pointer"><input type="checkbox" class="accent-cs-cyan w-3.5 h-3.5"> Automatic report generation</label>
+        <label class="flex items-center gap-2.5 text-[12px] text-cs-text2 cursor-pointer"><input type="checkbox" checked class="accent-cs-cyan w-3.5 h-3.5"> Store samples indefinitely</label>
+      </div>
+    </div>
+    <div class="glass rounded-lg glow-border p-4 space-y-3">
+      <div class="text-[13px] font-semibold text-cs-text">Notifications</div>
+      <label class="flex items-center gap-2.5 text-[12px] text-cs-text2 cursor-pointer"><input type="checkbox" checked class="accent-cs-cyan w-3.5 h-3.5"> Critical findings alert</label>
+      <label class="flex items-center gap-2.5 text-[12px] text-cs-text2 cursor-pointer"><input type="checkbox" checked class="accent-cs-cyan w-3.5 h-3.5"> Analysis completion notification</label>
+      <label class="flex items-center gap-2.5 text-[12px] text-cs-text2 cursor-pointer"><input type="checkbox" class="accent-cs-cyan w-3.5 h-3.5"> Weekly summary email</label>
+    </div>
+    <button class="w-full py-2.5 rounded-lg bg-cs-cyan/10 border border-cs-cyan/20 text-cs-cyan text-[13px] font-semibold hover:bg-cs-cyan/15 transition-colors">Save Settings</button>
+  </div>`;
+}
+
+// ============================================================
+// 图表初始化
+// ============================================================
+function initPageCharts() {
+  const chartFont = { family:"'IBM Plex Sans',sans-serif", size:10 };
+  const gridColor = 'rgba(26,39,68,0.6)';
+  const tickColor = '#556677';
+
+  // 仪表盘趋势图
+  const trendEl = document.getElementById('chart-trend');
+  if (trendEl) {
+    charts['chart-trend'] = new Chart(trendEl, {
+      type:'line', data:{ labels:['Nov 18','Nov 19','Nov 20','Nov 21','Nov 22','Nov 23','Nov 24','Nov 25','Nov 26','Nov 27','Nov 28','Nov 29','Nov 30','Dec 01'],
+        datasets:[
+          {label:'Analyzed',data:[142,168,155,201,189,134,98,176,210,195,220,187,234,203],borderColor:'#00B4D8',backgroundColor:'rgba(0,180,216,0.05)',fill:true,tension:0.3,pointRadius:2,borderWidth:1.5},
+          {label:'Malicious',data:[89,112,98,143,128,87,61,121,156,138,167,134,178,148],borderColor:'#FF3B3B',backgroundColor:'rgba(255,59,59,0.05)',fill:true,tension:0.3,pointRadius:2,borderWidth:1.5}
+        ]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:tickColor,font:chartFont,boxWidth:10,padding:12}}},scales:{x:{grid:{color:gridColor},ticks:{color:tickColor,font:chartFont}},y:{grid:{color:gridColor},ticks:{color:tickColor,font:chartFont}}}}
+    });
+  }
+
+  // 威胁类型图
+  const typesEl = document.getElementById('chart-types');
+  if (typesEl) {
+    charts['chart-types'] = new Chart(typesEl, {
+      type:'doughnut', data:{ labels:['Trojan','Ransomware','Stealer','Downloader','RAT','Other'],
+        datasets:[{data:[612,284,341,298,187,171],backgroundColor:['#FF3B3B','#FF6B35','#FFB800','#00B4D8','#A78BFA','#556677'],borderWidth:0}]},
+      options:{responsive:true,maintainAspectRatio:false,cutout:'65%',plugins:{legend:{position:'right',labels:{color:tickColor,font:chartFont,boxWidth:8,padding:8}}}}
+    });
+  }
+
+  // 协议分布图
+  const protoEl = document.getElementById('chart-proto');
+  if (protoEl) {
+    charts['chart-proto'] = new Chart(protoEl, {
+      type:'doughnut', data:{ labels:['TLS 1.2','HTTP','DNS','TLS 1.3'],
+        datasets:[{data:[60,22,12,6],backgroundColor:['#FF3B3B','#FFB800','#00B4D8','#00FF88'],borderWidth:0}]},
+      options:{responsive:true,maintainAspectRatio:false,cutout:'60%',plugins:{legend:{position:'right',labels:{color:tickColor,font:chartFont,boxWidth:8,padding:6}}}}
+    });
+  }
+
+  // 网络时间线
+  const netEl = document.getElementById('chart-net-timeline');
+  if (netEl) {
+    charts['chart-net-timeline'] = new Chart(netEl, {
+      type:'bar', data:{ labels:['10:01:10','10:01:12','10:01:15','10:01:18','10:01:30','10:03:12'],
+        datasets:[
+          {label:'Sent (bytes)',data:[0,64,4812,0,2048,512],backgroundColor:'rgba(255,59,59,0.6)',borderRadius:2},
+          {label:'Recv (bytes)',data:[0,0,0,12204,0,0],backgroundColor:'rgba(0,180,216,0.6)',borderRadius:2}
+        ]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:tickColor,font:chartFont,boxWidth:10,padding:10}}},scales:{x:{grid:{color:gridColor},ticks:{color:tickColor,font:{...chartFont,size:9}}},y:{grid:{color:gridColor},ticks:{color:tickColor,font:chartFont}}}}
+    });
+  }
+}
+
+// ============================================================
+// 初始化
+// ============================================================
+function init() {
+  renderSidebar();
+  render();
+  // 点击样本分析页中的样本行跳转
+  document.addEventListener('click', (e) => {
+    const row = e.target.closest('tr[onclick]');
+    if (row && row.getAttribute('onclick')?.includes("navigate('sample')")) {
+      // 已由 onclick 处理
+    }
+  });
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>

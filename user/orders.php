@@ -18,11 +18,10 @@ $user_id  = intval($_SESSION['user_id'] ?? 0);
 $username = $_SESSION['username'] ?? '';
 
 // Fetch orders for this user — join on user_id, fall back to username for old rows
-$orders_query = "SELECT o.*
-                 FROM orders o
-                 WHERE o.user_id = $user_id OR o.username = '" . mysqli_real_escape_string($conn, $username) . "'
-                 ORDER BY o.id DESC";
-$orders_result = mysqli_query($conn, $orders_query);
+$stmt = $conn->prepare("SELECT o.* FROM orders o WHERE o.user_id = ? OR o.username = ? ORDER BY o.id DESC");
+$stmt->bind_param("is", $user_id, $username);
+$stmt->execute();
+$orders_result = $stmt->get_result();
 ?>
 <!DOCTYPE html>
 <html lang="en">

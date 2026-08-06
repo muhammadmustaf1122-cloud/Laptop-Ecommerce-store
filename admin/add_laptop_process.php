@@ -39,50 +39,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_laptop'])) {
             (brand_id, category_id, model, title, price, stock, specs, processor, ram, storage, gpu, display, image_url, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())'
     );
-    $stmt->bind_param('iissdissssss s',
+    $stmt->bind_param('iissdisssssss',
         $brand_id, $category_id, $model, $title, $price, $stock,
         $specs_json, $processor, $ram, $storage, $gpu, $display, $image_url
     );
-    $stmt->close();
 
-    // Use mysqli_query to avoid bind_param count confusion
-    $bran  = $conn->real_escape_string((string)$brand_id);
-    $catg  = $conn->real_escape_string((string)$category_id);
-    $ttl   = $conn->real_escape_string($title);
-    $mdl   = $conn->real_escape_string($model);
-    $prc   = $conn->real_escape_string((string)$price);
-    $stk   = $conn->real_escape_string((string)$stock);
-    $spc   = $conn->real_escape_string($specs_json);
-    $proc  = $conn->real_escape_string($processor);
-    $rmm   = $conn->real_escape_string($ram);
-    $stor  = $conn->real_escape_string($storage);
-    $gpuu  = $conn->real_escape_string($gpu);
-    $disp  = $conn->real_escape_string($display);
-
-    $insert_sql = "INSERT INTO laptop
-        (brand_id, category_id, model, title, price, stock, specs, processor, ram, storage, gpu, display, image_url, created_at)
-        VALUES ($bran, $catg, '$mdl', '$ttl', $prc, $stk, '$spc', '$proc', '$rmm', '$stor', '$gpuu', '$disp', '', NOW())";
-
-    if ($conn->query($insert_sql)) {
+    if ($stmt->execute()) {
         $laptop_id = $conn->insert_id;
+        $stmt->close();
 
         $upload_dir = __DIR__ . '/../uploads/';
         if (!is_dir($upload_dir)) {
-            mkdir($upload_dir, 0777, true);
+            mkdir($upload_dir, 0755, true);
         }
+
+        $allowed_exts = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+        $allowed_mimes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+        $max_size = 5 * 1024 * 1024; // 5MB limit
 
         // Handle uploaded gallery image files
         if (!empty($_FILES['gallery_images']['name']) && is_array($_FILES['gallery_images']['name'])) {
             foreach ($_FILES['gallery_images']['name'] as $key => $filename) {
-                if (!empty($filename) && ($_FILES['gallery_images']['error'][$key] ?? 0) === 0 && is_uploaded_file($_FILES['gallery_images']['tmp_name'][$key] ?? '')) {
-                    $image_ext    = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
-                    $new_img_name = uniqid('laptop_', true) . '.' . $image_ext;
-                    $destination  = $upload_dir . $new_img_name;
-                    if (move_uploaded_file($_FILES['gallery_images']['tmp_name'][$key], $destination)) {
-                        $img_stmt = $conn->prepare('INSERT INTO laptop_images (laptop_id, image_url) VALUES (?, ?)');
-                        $img_stmt->bind_param('is', $laptop_id, $new_img_name);
-                        $img_stmt->execute();
-                        $img_stmt->close();
+                $tmp_name = $_FILES['gallery_images']['tmp_name'][$key] ?? '';
+                $file_size = $_FILES['gallery_images']['size'][$key] ?? 0;
+                $file_err  = $_FILES['gallery_images']['error'][$key] ?? 1;
+
+                if (!empty($filename) && $file_err === 0 && is_uploaded_file($tmp_name) && $file_size <= $max_size) {
+                    $image_ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+                    
+                    if (in_array($image_ext, $allowed_exts, true)) {
+                        $check_img = @getimagesize($tmp_name);
+                        if ($check_img !== false && in_array($check_img['mime'], $allowed_mimes, true)) {
+                            $new_img_name = 'laptop_' . bin2hex(random_bytes(8)) . '.' . $image_ext;
+                            $destination  = $upload_dir . $new_img_name;
+                            if (move_uploaded_file($tmp_name, $destination)) {
+                                $img_stmt = $conn->prepare('INSERT INTO laptop_images (laptop_id, image_url) VALUES (?, ?)');
+                                $img_stmt->bind_param('is', $laptop_id, $new_img_name);
+                                $img_stmt->execute();
+                                $img_stmt->close();
+                            }
+                        }
                     }
                 }
             }
@@ -93,7 +89,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_laptop'])) {
             $urls = preg_split('/\r\n|\r|\n/', trim($_POST['gallery_urls']));
             foreach ($urls as $url) {
                 $clean_url = trim($url);
-                if ($clean_url !== '') {
+                if ($clean_url !== '' && filter_var($clean_url, FILTER_VALIDATE_URL)) {
                     $img_stmt = $conn->prepare('INSERT INTO laptop_images (laptop_id, image_url) VALUES (?, ?)');
                     $img_stmt->bind_param('is', $laptop_id, $clean_url);
                     $img_stmt->execute();
@@ -104,6 +100,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_laptop'])) {
 
         header('Location: inventory.php?success=1');
         exit();
+    } else {
+        $stmt->close();
     }
 
     header('Location: inventory.php?error=1');

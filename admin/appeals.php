@@ -2,43 +2,52 @@
 include '../login/auth.php';
 include 'db.php';
 
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+$csrf_token = $_SESSION['csrf_token'];
+
 // Handle Unblocking or Deleting Appeal Action
 if (isset($_GET['action']) && isset($_GET['id'])) {
-    $appeal_id = intval($_GET['id']);
-    $action = $_GET['action'];
+    if (!hash_equals($_SESSION['csrf_token'] ?? '', $_GET['csrf_token'] ?? '')) {
+        $_SESSION['flash_msg'] = '<div style="padding: 10px; background: #fee2e2; color: #991b1b; border-radius: 6px; margin-bottom: 1rem;">CSRF validation failed.</div>';
+    } else {
+        $appeal_id = intval($_GET['id']);
+        $action = $_GET['action'];
 
-    // Fetch email associated with the appeal
-    $stmt = $conn->prepare("SELECT email FROM user_appeals WHERE id = ?");
-    $stmt->bind_param("i", $appeal_id);
-    $stmt->execute();
-    $res = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
+        // Fetch email associated with the appeal
+        $stmt = $conn->prepare("SELECT email FROM user_appeals WHERE id = ?");
+        $stmt->bind_param("i", $appeal_id);
+        $stmt->execute();
+        $res = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
 
-    if ($res) {
-        $target_email = $res['email'];
+        if ($res) {
+            $target_email = $res['email'];
 
-        if ($action === 'unblock') {
-            // Unblock user in users table
-            $unblock = $conn->prepare("UPDATE users SET is_verified = 1 WHERE email = ?");
-            $unblock->bind_param("s", $target_email);
-            $unblock->execute();
-            $unblock->close();
+            if ($action === 'unblock') {
+                // Unblock user in users table
+                $unblock = $conn->prepare("UPDATE users SET is_verified = 1 WHERE email = ?");
+                $unblock->bind_param("s", $target_email);
+                $unblock->execute();
+                $unblock->close();
 
-            // Mark appeal as resolved/deleted
-            $del = $conn->prepare("DELETE FROM user_appeals WHERE id = ?");
-            $del->bind_param("i", $appeal_id);
-            $del->execute();
-            $del->close();
-            
-            $_SESSION['flash_msg'] = '<div style="padding: 10px; background: #dcfce7; color: #15803d; border-radius: 6px; margin-bottom: 1rem;">User unblocked and appeal resolved successfully.</div>';
-        } elseif ($action === 'dismiss') {
-            // Just delete the appeal
-            $del = $conn->prepare("DELETE FROM user_appeals WHERE id = ?");
-            $del->bind_param("i", $appeal_id);
-            $del->execute();
-            $del->close();
+                // Mark appeal as resolved/deleted
+                $del = $conn->prepare("DELETE FROM user_appeals WHERE id = ?");
+                $del->bind_param("i", $appeal_id);
+                $del->execute();
+                $del->close();
+                
+                $_SESSION['flash_msg'] = '<div style="padding: 10px; background: #dcfce7; color: #15803d; border-radius: 6px; margin-bottom: 1rem;">User unblocked and appeal resolved successfully.</div>';
+            } elseif ($action === 'dismiss') {
+                // Just delete the appeal
+                $del = $conn->prepare("DELETE FROM user_appeals WHERE id = ?");
+                $del->bind_param("i", $appeal_id);
+                $del->execute();
+                $del->close();
 
-            $_SESSION['flash_msg'] = '<div style="padding: 10px; background: #fef08a; color: #854d0e; border-radius: 6px; margin-bottom: 1rem;">Appeal dismissed.</div>';
+                $_SESSION['flash_msg'] = '<div style="padding: 10px; background: #fef08a; color: #854d0e; border-radius: 6px; margin-bottom: 1rem;">Appeal dismissed.</div>';
+            }
         }
     }
     header("Location: appeals.php");
@@ -94,8 +103,8 @@ unset($_SESSION['flash_msg']);
             <div style="color: #475569; word-break: break-word;"><?php echo htmlspecialchars($row['reason']); ?></div>
             <div style="color: #64748b;"><?php echo date("M d, Y", strtotime($row['created_at'])); ?></div>
             <div style="text-align: right; white-space: nowrap;">
-              <a href="appeals.php?action=unblock&id=<?php echo $row['id']; ?>" style="padding: 0.3rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; text-decoration: none; background: #dcfce7; color: #15803d; margin-right: 2px; display: inline-block;">Unblock</a>
-              <a href="appeals.php?action=dismiss&id=<?php echo $row['id']; ?>" style="padding: 0.3rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; text-decoration: none; background: #fee2e2; color: #991b1b; display: inline-block;" onclick="return confirm('Dismiss this appeal?');">Dismiss</a>
+              <a href="appeals.php?action=unblock&id=<?php echo $row['id']; ?>&csrf_token=<?php echo htmlspecialchars($csrf_token, ENT_QUOTES, 'UTF-8'); ?>" style="padding: 0.3rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; text-decoration: none; background: #dcfce7; color: #15803d; margin-right: 2px; display: inline-block;">Unblock</a>
+              <a href="appeals.php?action=dismiss&id=<?php echo $row['id']; ?>&csrf_token=<?php echo htmlspecialchars($csrf_token, ENT_QUOTES, 'UTF-8'); ?>" style="padding: 0.3rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; text-decoration: none; background: #fee2e2; color: #991b1b; display: inline-block;" onclick="return confirm('Dismiss this appeal?');">Dismiss</a>
             </div>
           </div>
         <?php 

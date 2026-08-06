@@ -2,11 +2,37 @@
 include '../login/auth.php';
 include 'db.php';
 
+// CSRF token initialisation
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
+// Allowed status values — whitelist so no arbitrary string reaches the DB
+$allowed_statuses = [
+    'Paid - To Be Packed',
+    'Packed - Ready to Ship',
+    'Shipped',
+    'Delivered',
+    'Cancelled',
+];
+
 // Handle status update
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['order_id'], $_POST['new_status'])) {
-    $order_id  = intval($_POST['order_id']);
-    $new_status = mysqli_real_escape_string($conn, $_POST['new_status']);
-    $conn->query("UPDATE orders SET status = '$new_status' WHERE id = $order_id");
+    // CSRF check
+    if (!hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'] ?? '')) {
+        die('Invalid form submission (CSRF).');
+    }
+    $order_id   = intval($_POST['order_id']);
+    $new_status = $_POST['new_status'];
+    // Validate against whitelist
+    if (!in_array($new_status, $allowed_statuses, true)) {
+        die('Invalid status value.');
+    }
+    // Prepared statement — no string interpolation
+    $upd = $conn->prepare("UPDATE orders SET status = ? WHERE id = ?");
+    $upd->bind_param('si', $new_status, $order_id);
+    $upd->execute();
+    $upd->close();
     header("Location: orders.php?success=1");
     exit();
 }
@@ -145,7 +171,8 @@ $orders_result = mysqli_query($conn, $orders_query);
                 <td><span class="badge <?php echo $badge_class; ?>"><?php echo htmlspecialchars($st); ?></span></td>
                 <td>
                   <form action="orders.php" method="POST" style="display:flex;gap:0.4rem;align-items:center;">
-                    <input type="hidden" name="order_id" value="<?php echo $order['id']; ?>">
+                    <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token'], ENT_QUOTES, 'UTF-8'); ?>">
+                    <input type="hidden" name="order_id" value="<?php echo intval($order['id']); ?>">
                     <select name="new_status" class="status-select">
                       <option value="Paid - To Be Packed"   <?php echo ($st === 'Paid - To Be Packed')   ? 'selected' : ''; ?>>To Be Packed</option>
                       <option value="Packed - Ready to Ship" <?php echo ($st === 'Packed - Ready to Ship') ? 'selected' : ''; ?>>Ready to Ship</option>

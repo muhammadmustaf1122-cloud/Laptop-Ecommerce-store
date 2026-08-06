@@ -5,24 +5,33 @@ include '../admin/db.php';
 $msg = "";
 $prefilled_email = $_GET['email'] ?? '';
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $email = trim($_POST['email'] ?? '');
-    $reason = trim($_POST['reason'] ?? '');
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+$csrf_token = $_SESSION['csrf_token'];
 
-    if (empty($email) || empty($reason)) {
-        $msg = '<div style="padding: 10px; background: #fee2e2; color: #991b1b; border-radius: 6px; margin-bottom: 1rem; font-size: 0.85rem;">Please fill in all fields.</div>';
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'] ?? '')) {
+        $msg = '<div style="padding: 10px; background: #fee2e2; color: #991b1b; border-radius: 6px; margin-bottom: 1rem; font-size: 0.85rem;">Invalid form submission.</div>';
     } else {
-        $stmt = $conn->prepare("INSERT INTO user_appeals (email, reason) VALUES (?, ?)");
-        if ($stmt) {
-            $stmt->bind_param("ss", $email, $reason);
-            if ($stmt->execute()) {
-                $msg = '<div style="padding: 10px; background: #dcfce7; color: #15803d; border-radius: 6px; margin-bottom: 1rem; font-size: 0.85rem;">Your appeal has been submitted successfully. The administrator will review it.</div>';
-            } else {
-                $msg = '<div style="padding: 10px; background: #fee2e2; color: #991b1b; border-radius: 6px; margin-bottom: 1rem; font-size: 0.85rem;">Error submitting appeal. Please try again.</div>';
-            }
-            $stmt->close();
+        $email = trim($_POST['email'] ?? '');
+        $reason = trim($_POST['reason'] ?? '');
+
+        if (empty($email) || empty($reason) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $msg = '<div style="padding: 10px; background: #fee2e2; color: #991b1b; border-radius: 6px; margin-bottom: 1rem; font-size: 0.85rem;">Please fill in all fields with a valid email.</div>';
         } else {
-            $msg = '<div style="padding: 10px; background: #fee2e2; color: #991b1b; border-radius: 6px; margin-bottom: 1rem; font-size: 0.85rem;">Database error. Please try again later.</div>';
+            $stmt = $conn->prepare("INSERT INTO user_appeals (email, reason) VALUES (?, ?)");
+            if ($stmt) {
+                $stmt->bind_param("ss", $email, $reason);
+                if ($stmt->execute()) {
+                    $msg = '<div style="padding: 10px; background: #dcfce7; color: #15803d; border-radius: 6px; margin-bottom: 1rem; font-size: 0.85rem;">Your appeal has been submitted successfully. The administrator will review it.</div>';
+                } else {
+                    $msg = '<div style="padding: 10px; background: #fee2e2; color: #991b1b; border-radius: 6px; margin-bottom: 1rem; font-size: 0.85rem;">Error submitting appeal. Please try again.</div>';
+                }
+                $stmt->close();
+            } else {
+                $msg = '<div style="padding: 10px; background: #fee2e2; color: #991b1b; border-radius: 6px; margin-bottom: 1rem; font-size: 0.85rem;">Database error. Please try again later.</div>';
+            }
         }
     }
 }
@@ -59,6 +68,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <?php echo $msg; ?>
 
     <form method="POST">
+      <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrf_token ?? '', ENT_QUOTES, 'UTF-8'); ?>">
       <div class="form-group">
         <label>Your Email Address</label>
         <input type="email" name="email" value="<?php echo htmlspecialchars($prefilled_email, ENT_QUOTES, 'UTF-8'); ?>" required>

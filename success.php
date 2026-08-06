@@ -4,7 +4,7 @@ require('admin/db.php');
 
 $user_id       = isset($_SESSION['user_id']) ? intval($_SESSION['user_id']) : 0;
 $performed_by  = $_SESSION['username'] ?? 'Guest Customer';
-$session_id    = isset($_GET['session_id']) ? mysqli_real_escape_string($conn, $_GET['session_id']) : '';
+$session_id    = isset($_GET['session_id']) ? trim($_GET['session_id']) : '';
 
 // Support single laptop_id (legacy) OR cart JSON for multi-item orders
 $laptop_id = isset($_GET['laptop_id']) ? intval($_GET['laptop_id']) : 0;
@@ -15,10 +15,15 @@ $cart_items = $_SESSION['checkout_cart'] ?? [];
 // Prevent duplicate order if user refreshes the success page
 $already_logged = false;
 if (!empty($session_id)) {
-    $check_dup = mysqli_query($conn, "SELECT id FROM activity_logs WHERE action LIKE '%$session_id%' LIMIT 1");
-    if ($check_dup && mysqli_num_rows($check_dup) > 0) {
+    $search_pattern = '%' . $session_id . '%';
+    $dup_stmt = $conn->prepare("SELECT id FROM activity_logs WHERE action LIKE ? LIMIT 1");
+    $dup_stmt->bind_param("s", $search_pattern);
+    $dup_stmt->execute();
+    $dup_res = $dup_stmt->get_result();
+    if ($dup_res && $dup_res->num_rows > 0) {
         $already_logged = true;
     }
+    $dup_stmt->close();
 }
 
 if (!$already_logged) {
@@ -26,6 +31,7 @@ if (!$already_logged) {
 
     // ------------------------------------------------------------------
     // Build the item list from cart session OR single laptop_id fallback
+    // Always fetch unit price from the DB server-side for integrity!
     // ------------------------------------------------------------------
     $items_to_insert = [];
 
@@ -34,21 +40,31 @@ if (!$already_logged) {
         foreach ($cart_items as $item) {
             $lid   = intval($item['id'] ?? 0);
             $qty   = max(1, intval($item['qty'] ?? 1));
-            $price = floatval($item['price'] ?? 0);
-            if ($lid > 0 && $price > 0) {
-                $items_to_insert[]  = ['laptop_id' => $lid, 'qty' => $qty, 'unit_price' => $price];
-                $total_amount      += $price * $qty;
+            if ($lid > 0) {
+                $p_stmt = $conn->prepare("SELECT price FROM laptop WHERE id = ? LIMIT 1");
+                $p_stmt->bind_param("i", $lid);
+                $p_stmt->execute();
+                $p_res = $p_stmt->get_result();
+                if ($p_res && $p_res->num_rows > 0) {
+                    $db_price = floatval($p_res->fetch_assoc()['price']);
+                    $items_to_insert[]  = ['laptop_id' => $lid, 'qty' => $qty, 'unit_price' => $db_price];
+                    $total_amount      += $db_price * $qty;
+                }
+                $p_stmt->close();
             }
         }
     } elseif ($laptop_id > 0) {
         // Single-laptop checkout (legacy path)
-        $price_row = mysqli_query($conn, "SELECT price FROM laptop WHERE id = $laptop_id LIMIT 1");
-        if ($price_row && mysqli_num_rows($price_row) > 0) {
-            $laptop_data            = mysqli_fetch_assoc($price_row);
-            $unit_price             = floatval($laptop_data['price']);
-            $items_to_insert[]      = ['laptop_id' => $laptop_id, 'qty' => 1, 'unit_price' => $unit_price];
-            $total_amount           = $unit_price;
+        $p_stmt = $conn->prepare("SELECT price FROM laptop WHERE id = ? LIMIT 1");
+        $p_stmt->bind_param("i", $laptop_id);
+        $p_stmt->execute();
+        $p_res = $p_stmt->get_result();
+        if ($p_res && $p_res->num_rows > 0) {
+            $unit_price        = floatval($p_res->fetch_assoc()['price']);
+            $items_to_insert[] = ['laptop_id' => $laptop_id, 'qty' => 1, 'unit_price' => $unit_price];
+            $total_amount      = $unit_price;
         }
+        $p_stmt->close();
     }
 
     if (!empty($items_to_insert)) {

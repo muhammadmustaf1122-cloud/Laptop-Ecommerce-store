@@ -30,12 +30,19 @@ $stripeSecretKey = getenv('STRIPE_SECRET_KEY') ?: 'YOUR_STRIPE_SECRET_KEY';
 \Stripe\Stripe::setApiKey($stripeSecretKey);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'] ?? '')) {
+        header("Location: user/index.php");
+        exit();
+    }
     $laptop_id = isset($_POST['laptop_id']) ? intval($_POST['laptop_id']) : 0;
 
-    // Fetch laptop details from database
-    $query = "SELECT * FROM laptop WHERE id = $laptop_id LIMIT 1";
-    $result = mysqli_query($conn, $query);
-    $laptop = ($result && mysqli_num_rows($result) > 0) ? mysqli_fetch_assoc($result) : null;
+    // Fetch laptop details from database using prepared statement
+    $stmt = $conn->prepare("SELECT * FROM laptop WHERE id = ? LIMIT 1");
+    $stmt->bind_param("i", $laptop_id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $laptop = ($result && $result->num_rows > 0) ? $result->fetch_assoc() : null;
+    $stmt->close();
 
     if (!$laptop) {
         header("Location: user/index.php");
